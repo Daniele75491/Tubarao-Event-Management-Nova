@@ -1,0 +1,120 @@
+/* Administrative editing only; public styles stay unchanged. */
+.event-library{margin-top:16px}
+.edit-event input,.event-library input,.non-paying-accordion input{font-size:16px;min-height:48px;min-width:0}
+.edit-event .btn,.event-library .btn,.non-paying-accordion .btn{min-height:48px;margin-top:12px;white-space:normal}
+.event-library summary{padding:18px 0;cursor:pointer;font-weight:800}
+.event-library .settings{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.management-list{list-style:none;padding:0;margin:16px 0}
+.management-list li,.non-paying-list li{border-top:1px solid var(--line);padding:16px 0;overflow-wrap:anywhere}
+.management-list p{font-size:13px;line-height:1.6;margin:8px 0}
+.management-list strong{font-size:18px}
+.non-paying-list .btn{display:block}
+.admin-wrap .table-wrap{max-width:100%;overflow:auto}
+.admin-wrap .settings .field{min-width:0}
+@media(max-width:760px){.event-library .settings{grid-template-columns:1fr}.admin-wrap .topbar{flex-wrap:wrap;gap:12px}.admin-wrap .card{min-width:0}.admin-wrap .btn{min-height:48px}}
+
+/* Payment operations stay first; completed deliveries use existing dashboard data. */
+.payment-columns{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(0,1fr);gap:24px;align-items:start}
+.payment-review,.payment-completed{min-width:0}
+.payment-review h3{font-size:12px;letter-spacing:.12em;margin:0 0 16px}
+.payment-verification .guest-table{min-width:0;table-layout:fixed}
+.payment-verification .guest-table th,.payment-verification .guest-table td{overflow-wrap:anywhere;vertical-align:top}
+.payment-verification .btn{min-height:44px;padding:10px 8px;font-size:10px;white-space:normal;max-width:100%;overflow-wrap:anywhere;margin:6px 0}
+.payment-completed{border:1px solid var(--line);border-radius:12px;padding:0 14px}
+.payment-completed summary{display:flex;align-items:center;gap:10px;cursor:pointer;padding:18px 0;font-size:11px;font-weight:800;letter-spacing:.05em}
+.payment-completed summary::before{content:'+';font-size:20px}
+.payment-completed[open] summary::before{content:'−'}
+.payment-completed summary .badge{margin-left:auto}
+.payment-completed summary:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+#completed-payments{list-style:none;padding:0;margin:0;max-height:560px;overflow-y:auto;overflow-wrap:anywhere;scrollbar-gutter:stable}
+#completed-payments li{border-top:1px solid var(--line);padding:16px 0}
+#completed-payments strong{font-size:16px}
+#completed-payments p{font-size:11px;line-height:1.6;margin:8px 0}
+@media(max-width:760px){
+  .payment-columns{grid-template-columns:minmax(0,1fr)}
+  #completed-payments{max-height:none;overflow:visible;scrollbar-gutter:auto}
+  .payment-verification .table-wrap{overflow:visible}
+  .payment-verification .guest-table,.payment-verification .guest-table tbody,.payment-verification .guest-table tr{display:block;width:100%}
+  .payment-verification .guest-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .payment-verification .guest-table tr{border-bottom:1px solid var(--line);padding:12px 0}
+  .payment-verification .guest-table td{display:block;border:0;padding:6px 0;min-width:0}
+  .payment-verification .guest-table td[data-label]::before{content:attr(data-label);display:block;font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:4px}
+  .payment-verification .btn{font-size:11px;padding:12px;min-height:48px;margin-right:8px}
+}
+
+/* One full-width paid master list, followed by simpler non-paying management. */
+.paid-attendees .guest-table{min-width:0;table-layout:fixed}
+.paid-attendees .attendee-email{color:var(--muted);overflow-wrap:anywhere}
+.paid-attendees .guest-table th:nth-child(3){width:26%}
+@media(max-width:760px){
+  .paid-attendees .table-wrap{overflow:visible}
+  .paid-attendees .guest-table,.paid-attendees .guest-table tbody,.paid-attendees .guest-table tr{display:block;width:100%}
+  .paid-attendees .guest-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .paid-attendees .guest-table tr{border-bottom:1px solid var(--line);padding:12px 0}
+  .paid-attendees .guest-table td{display:block;border:0;padding:6px 0;overflow-wrap:anywhere}
+  .paid-attendees .guest-table td[data-label]::before{content:attr(data-label);display:block;color:var(--muted);font-size:9px;text-transform:uppercase;margin-bottom:4px}
+  .admin-attendees .attendee-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:480px){.admin-attendees .attendee-filters{grid-template-columns:1fr}}
+
+/* Compact control-room actions and read-only financial/sales summary. */
+.control-actions{display:flex;flex-wrap:wrap;align-items:flex-start;gap:16px;margin:16px 0}
+.control-actions .btn{max-width:100%;white-space:normal}
+.backup-action{min-width:0}
+.backup-action p{font-size:11px;line-height:1.5;margin:6px 0 0}
+.kpi-summary .kpi-finance{grid-template-columns:repeat(2,minmax(0,1fr))}
+.sales-overview p{font-size:11px;line-height:1.5;margin:8px 0 0}
+.event-columns{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(0,1fr);gap:24px;align-items:start}
+.active-event,.other-events{min-width:0;overflow-wrap:anywhere}
+.active-event h3{font-size:12px;letter-spacing:.12em;margin:0 0 18px}
+.active-event strong{font-size:24px}
+.active-event p{font-size:13px;line-height:1.6;margin:12px 0 0}
+.other-events{border:1px solid var(--line);border-radius:12px;padding:0 14px}
+.other-events>summary{display:flex;align-items:center;gap:10px;font-size:11px;letter-spacing:.05em}
+.other-events>summary::before{content:'+';font-size:20px}
+.other-events[open]>summary::before{content:'−'}
+.other-events>summary .badge{margin-left:auto}
+.other-events summary:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+.other-events .management-list{margin:0}
+.other-events .settings{grid-template-columns:minmax(0,1fr)}
+#create-event-panel{border-top:1px solid var(--line);padding-bottom:14px}
+#create-event-panel>summary{font-size:11px}
+@media(max-width:760px){
+  .control-actions{flex-direction:column;gap:12px}
+  .control-actions>*{width:100%}
+  .backup-action .btn{width:100%}
+  .kpi-summary .kpi-finance,.event-columns{grid-template-columns:minmax(0,1fr)}
+}
+
+/* Exact paid-ticket removal; dialog defaults to the safe cancel action. */
+#delete-paid-dialog{width:min(480px,calc(100% - 24px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid var(--bone);border-radius:16px;background:var(--black);color:var(--bone);padding:24px}
+#delete-paid-dialog::backdrop{background:rgba(0,0,0,.8)}
+#delete-paid-dialog h2{font-size:22px;line-height:1.3;margin-top:0}
+#delete-paid-details{white-space:pre-line;overflow-wrap:anywhere;line-height:1.7}
+#delete-paid-warning{font-size:14px;line-height:1.6;color:var(--muted)}
+.delete-paid-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}
+.delete-paid-actions .btn{flex:1;min-height:48px;white-space:normal}
+.btn.danger{background:transparent;color:#ffb5b5;border:1px solid #ffb5b5}
+.btn.danger:hover{background:rgba(255,181,181,.1)}
+
+.pricing-display-control{display:flex;align-items:center;gap:12px;min-height:48px}
+.pricing-display-control label{margin:0;cursor:pointer}
+.pricing-display-control input[type="checkbox"]{width:22px;height:22px;min-height:22px;margin:0;accent-color:#1F5CFF;cursor:pointer}
+
+.category-change{display:inline-flex;align-items:center;margin-left:10px;padding:8px;min-height:44px;background:transparent;color:var(--bone);border:1px solid var(--line);border-radius:8px;font-size:10px;font-weight:700;cursor:pointer}
+#category-dialog{width:min(420px,calc(100% - 24px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid var(--line);border-radius:16px;background:var(--black);color:var(--bone);padding:24px}
+#category-dialog::backdrop{background:rgba(0,0,0,.8)}
+#category-dialog h2{font-size:22px;margin-top:0}
+#category-guest{overflow-wrap:anywhere;line-height:1.6}
+.category-actions{display:flex;gap:12px;margin-top:20px}
+.category-actions .btn{flex:1;min-width:0}
+
+.amount-adjust{display:block;width:fit-content;margin-top:8px;padding:8px;min-height:44px;white-space:normal!important;background:transparent;color:var(--bone);border:1px solid var(--line);border-radius:8px;font-size:10px;font-weight:700;cursor:pointer}
+#amount-dialog{width:min(460px,calc(100% - 24px));max-height:calc(100dvh - 32px);overflow:auto;border:1px solid var(--line);border-radius:16px;background:var(--black);color:var(--bone);padding:24px}
+#amount-dialog::backdrop{background:rgba(0,0,0,.8)}
+#amount-dialog h2{font-size:22px;margin-top:0}
+#amount-guest{overflow-wrap:anywhere;line-height:1.6}
+#amount-current{display:block;color:var(--bone);font-size:20px;margin-top:6px}
+#amount-warning{line-height:1.6}
+.amount-actions{display:flex;gap:12px;margin-top:20px}
+.amount-actions .btn{flex:1;min-width:0;white-space:normal}

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tubarão</title><link rel="stylesheet" href="styles.css"></head>
+<body><div class="shell"><div class="noise"></div><div class="container">
+  <svg class="logo-filter" aria-hidden="true" width="0" height="0"><defs><filter id="remove-logo-background" color-interpolation-filters="sRGB" x="0" y="0" width="100%" height="100%">
+    <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  .2126 .7152 .0722 0 0"/>
+    <feComponentTransfer><feFuncA type="linear" slope="1.085106" intercept="-0.085106"/></feComponentTransfer>
+  </filter></defs></svg>
+  <div class="topbar"><div class="wordmark">TUBARÃO</div></div>
+  <main class="hero">
+    <div class="hero-logo-frame" id="hero-media">
+      <img class="logo" src="assets/tubarao-logo.jpeg" alt="Tubarão">
+      <video class="hero-video" id="hero-video" data-src="assets/tubarao-hero.mp4" autoplay muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video>
+    </div>
+    <div class="eyebrow" id="date"></div><h1 id="event-name"></h1>
+    <div class="eventmeta"><span id="time"></span><span>Carcavelos</span></div><div class="openbar">Open Bar</div>
+  </main>
+  <section class="follow-gate" id="follow-gate">
+    <div class="step-index">Step 01</div>
+    <div class="follow-copy"><div class="eyebrow">Before tickets</div><h2>Follow Tubarão.</h2><p id="follow-instruction"></p></div>
+    <div class="follow-actions">
+      <a class="btn secondary" id="ig-link" href="#follow-confirm">Demo follow step</a>
+      <label class="follow-confirm" for="follow-confirm"><input type="checkbox" id="follow-confirm"><span>Simulate following <strong id="ig"></strong></span></label>
+    </div>
+  </section>
+  <div class="ticket-lock-note" id="ticket-lock-note">Confirm the Instagram step to unlock tickets.</div>
+  <section class="ticket-pricing" aria-labelledby="pricing-heading">
+    <div class="eyebrow">TICKETS</div><h2 id="pricing-heading">TICKETS</h2>
+    <div class="price" id="current-price">—</div>
+    <p class="subtle" id="pricing-message" role="status"></p>
+  </section>
+  <section class="ticket-grid locked" id="ticket-grid">
+    <article class="ticket-card"><div class="ticket-kind">Women Ticket</div><div class="status" id="women-status" aria-live="polite"></div><a class="btn ticket-btn" id="women-btn" aria-disabled="true" tabindex="-1">Get ticket →</a></article>
+    <article class="ticket-card"><div class="ticket-kind">Men Ticket</div><div class="status" id="men-status" aria-live="polite"></div><a class="btn ticket-btn" id="men-btn" aria-disabled="true" tabindex="-1">Get ticket →</a></article>
+  </section>
+  <aside class="next-price" id="next-price" hidden aria-labelledby="next-price-label">
+    <div class="eyebrow">NEXT PRICE</div>
+    <h2 id="next-price-label"></h2>
+    <div id="price-countdown-panel" hidden><div class="eyebrow" id="price-countdown-label">PRICE INCREASES IN</div><div id="price-countdown" aria-live="off" role="timer"></div><p class="subtle" id="price-deadline"></p></div>
+    <p class="next-price-help">Available after early tickets end</p>
+  </aside>
+  <p class="instruction">Tickets are individual and non-transferable.</p>
+  <div class="footer" id="footer"></div>
+</div></div><script>
+// Keep the original logo visible until playback actually starts.
+(() => {
+  const frame = document.getElementById('hero-media');
+  const video = document.getElementById('hero-video');
+  const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let attempt = 0;
+  const fallback = () => frame.classList.remove('video-playing');
+  video.muted = true;
+  video.defaultMuted = true;
+  video.volume = 0;
+  video.addEventListener('playing', () => {
+    if (!motion.matches && !video.paused) frame.classList.add('video-playing');
+  });
+  video.addEventListener('error', fallback);
+  video.addEventListener('pause', fallback);
+  async function updateMotion() {
+    const current = ++attempt;
+    fallback();
+    if (motion.matches) {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      return;
+    }
+    video.src = video.dataset.src;
+    try { await video.play(); }
+    catch { if (current === attempt) fallback(); }
+  }
+  motion.addEventListener('change', updateMotion);
+  updateMotion();
+})();
+</script><script src="app.js"></script><script src="ticket-pricing.js"></script><script>
+const checkbox = document.getElementById('follow-confirm');
+function render() {
+  const s = Tubarao.getEvent(), confirmed = Tubarao.followConfirmed(), config = Tubarao.config;
+  document.title = (s?.name || 'TUBARÃO') + ' — Tubarão';
+  document.getElementById('event-name').textContent = (s?.name || 'TUBARÃO');
+  document.getElementById('date').textContent = Tubarao.eventDate(s?.starts_at);
+  document.getElementById('time').textContent = Tubarao.eventTime(s?.starts_at);
+  document.getElementById('ig').textContent = config.instagram;
+  document.getElementById('follow-instruction').textContent = config.followInstruction;
+  document.getElementById('footer').textContent = 'Tubarão · Carcavelos · ' + (s?.starts_at ? new Date(s.starts_at).getFullYear() : new Date().getFullYear());
+  checkbox.checked = confirmed;
+  document.getElementById('ticket-grid').classList.toggle('locked', !confirmed);
+  document.getElementById('ticket-lock-note').hidden = confirmed;
+  ['women', 'men'].forEach(type => {
+    const closed = s && s.sales_status !== 'OPEN';
+    const status = closed ? 'TICKETS NOT CURRENTLY AVAILABLE' : s ? s[type + '_status'].replaceAll('_',' ') : (Tubarao.getEventError() ? 'UNAVAILABLE' : 'LOADING'), sold = !s || closed || status === 'SOLD OUT';
+    const button = document.getElementById(type + '-btn');
+    document.getElementById(type + '-status').textContent = status;
+    button.classList.toggle('sold', sold);
+    button.textContent = !s ? 'Try again soon' : closed ? 'Tickets closed' : sold ? 'Sold out' : 'Get ticket →';
+    button.setAttribute('aria-disabled', String(sold || !confirmed));
+    button.tabIndex = sold || !confirmed ? -1 : 0;
+    if (!sold && confirmed) button.href = 'checkout.html?type=' + type;
+    else button.removeAttribute('href');
+  });
+}
+checkbox.addEventListener('change', () => { Tubarao.setFollowConfirmed(checkbox.checked); render(); });
+document.querySelectorAll('.ticket-btn').forEach(button => button.addEventListener('click', event => {
+  render();
+  if (button.getAttribute('aria-disabled') === 'true') event.preventDefault();
+}));
+Tubarao.watchEvent(render);
+</script></body></html>

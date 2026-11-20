@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Tubarão — Check-in</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="checkin.css"></head>
+<body><div class="shell"><div class="noise"></div><main class="container checkin-wrap">
+<nav class="topbar"><a href="admin.html">BACK TO ADMIN</a><span class="wordmark">TUBARÃO</span><button id="logout" class="btn secondary" type="button" hidden>LOGOUT</button></nav>
+<section id="login-panel" class="panel"><h1 class="panel-title">ADMIN ACCESS</h1>
+<form id="login-form"><div class="field"><label for="access-code">Access code</label><input id="access-code" type="password" autocomplete="current-password" maxlength="512" autocapitalize="none" spellcheck="false" required></div><button class="btn" id="login" type="submit">ENTER</button></form></section>
+<p id="auth-message" class="notice" role="status">Loading sign-in…</p>
+<div id="checkin-panel" hidden><p id="account-label" class="subtle"></p>
+  <header class="checkin-heading"><div class="eyebrow" id="event-name"></div><h1 class="panel-title">CHECK-IN</h1></header>
+  <section id="scan-result" class="scan-result" role="status" aria-live="polite" hidden>
+    <h2 id="result-title" tabindex="-1"></h2><p id="result-name"></p><p id="result-category"></p><p id="result-time"></p><p id="result-detail"></p>
+    <button id="scan-next" type="button" class="btn">SCAN NEXT</button>
+  </section>
+  <section id="camera-panel" class="card" aria-label="Ticket scanner">
+    <div class="camera-viewport"><video id="camera" muted playsinline aria-label="Rear camera QR scanner"></video><div class="camera-guide" aria-hidden="true"></div></div>
+    <p id="camera-message" class="subtle" role="status">Open the camera to scan a ticket QR.</p>
+    <button id="start-camera" class="btn" type="button">OPEN CAMERA</button>
+    <button id="stop-camera" class="btn secondary" type="button" hidden>STOP CAMERA</button>
+    <a class="manual-link" href="#search-query" id="use-search">USE NAME / EMAIL SEARCH</a>
+  </section>
+  <section class="card checkin-search" aria-labelledby="search-title"><h2 id="search-title">FIND A GUEST</h2>
+    <form id="search-form"><div class="field"><label for="search-query">Search name or email</label><input id="search-query" type="search" maxlength="100" autocomplete="off" placeholder="Search name or email"></div><button id="search-button" class="btn secondary" type="submit">SEARCH</button></form>
+    <p id="search-message" class="subtle" role="status">Search paid guests if the camera or QR isn’t available.</p>
+    <ul id="search-results" class="checkin-results"></ul>
+  </section>
+  <section class="card live-attendance" aria-labelledby="attendance-title">
+    <h2 id="attendance-title">LIVE ATTENDANCE</h2>
+    <div class="presence-kpis">
+      <div class="presence-total"><span>TOTAL INSIDE</span><strong id="inside-total">0</strong></div>
+      <div><span>MEN</span><strong id="inside-men">0</strong></div><div><span>WOMEN</span><strong id="inside-women">0</strong></div>
+      <div><span>MEN %</span><strong id="inside-men-percent">0%</strong></div><div><span>WOMEN %</span><strong id="inside-women-percent">0%</strong></div>
+    </div>
+    <p id="presence-message" class="subtle" role="status">Loading attendance…</p>
+    <h3 class="presence-list-heading">PEOPLE INSIDE <span id="inside-count">0</span></h3>
+    <div class="presence-controls">
+      <div class="field"><label for="presence-sort">Sort</label><select id="presence-sort"><option value="latest">Latest check-in</option><option value="first">First name A–Z</option><option value="last">Last name A–Z</option><option value="men">MEN first</option><option value="women">WOMEN first</option></select></div>
+      <div class="field"><label for="presence-category">Category</label><select id="presence-category"><option value="ALL">ALL</option><option value="MEN">MEN</option><option value="WOMEN">WOMEN</option></select></div>
+      <div class="field"><label for="presence-type">Type</label><select id="presence-type"><option value="ALL">ALL</option><option value="PAID">PAID</option><option value="NON-PAYING">NON-PAYING</option></select></div>
+    </div>
+    <p id="presence-empty" class="subtle">NO ONE CHECKED IN YET</p>
+    <ul id="presence-list" class="checkin-results presence-list"></ul>
+  </section>
+</div></main></div>
+<script src="app.js"></script><script src="checkin-presence.js"></script><script type="module" src="checkin.js"></script>
+</body></html>

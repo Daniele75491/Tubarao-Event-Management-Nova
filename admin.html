@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tubarão — Admin</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="admin-management.css"></head>
+<body><div class="shell"><div class="noise"></div><div class="container admin-wrap">
+<div class="topbar"><a href="index.html">← Public site</a><div class="wordmark">TUBARÃO / ADMIN</div><button class="btn secondary" id="logout" type="button" hidden>Logout</button></div>
+<section id="login-panel" class="panel"><h1 class="panel-title">ADMIN ACCESS</h1>
+<form id="login-form"><div class="field"><label for="access-code">Access code</label><input id="access-code" type="password" autocomplete="current-password" maxlength="512" autocapitalize="none" spellcheck="false" required></div><button class="btn" id="login" type="submit">ENTER</button></form></section>
+<p id="auth-message" class="notice" role="status">Loading sign-in…</p>
+<dialog id="amount-dialog" aria-labelledby="amount-title" aria-describedby="amount-warning">
+  <h2 id="amount-title">ADJUST AMOUNT</h2>
+  <p id="amount-guest"></p>
+  <p class="subtle">CURRENT AMOUNT <strong id="amount-current"></strong></p>
+  <form id="amount-form">
+    <div class="field"><label for="amount-value">NEW AMOUNT (€)</label><input id="amount-value" type="text" inputmode="decimal" autocomplete="off" maxlength="7" required></div>
+    <p id="amount-warning" class="subtle">This changes the demo amount and revenue totals. No money moves.</p>
+    <p id="amount-error" role="status" class="subtle"></p>
+    <div class="amount-actions"><button class="btn secondary" id="amount-cancel" type="button" autofocus>CANCEL</button><button class="btn" id="amount-save" type="submit">SAVE AMOUNT</button></div>
+  </form>
+</dialog>
+<dialog id="category-dialog" aria-labelledby="category-title">
+  <h2 id="category-title">CHANGE CATEGORY</h2>
+  <p id="category-guest"></p>
+  <form id="category-form">
+    <div class="field"><label for="category-value">CATEGORY</label><select id="category-value"><option value="WOMEN">WOMEN</option><option value="MEN">MEN</option></select></div>
+    <p id="category-error" role="status" class="subtle"></p>
+    <div class="category-actions"><button class="btn secondary" id="category-cancel" type="button" autofocus>CANCEL</button><button class="btn" id="category-save" type="submit">SAVE</button></div>
+  </form>
+</dialog>
+<dialog id="delete-paid-dialog" aria-labelledby="delete-paid-title" aria-describedby="delete-paid-warning">
+  <h2 id="delete-paid-title">DELETE THIS PAID TICKET?</h2>
+  <p id="delete-paid-details"></p>
+  <p id="delete-paid-warning">This permanently removes this reservation and invalidates its ticket.</p>
+  <div class="delete-paid-actions"><button class="btn secondary" id="delete-paid-cancel" type="button" autofocus>CANCEL</button><button class="btn danger" id="delete-paid-confirm" type="button">DELETE TICKET</button></div>
+</dialog>
+<div id="dashboard" hidden><div class="admin-head"><div><div class="eyebrow">Control room</div><div class="admin-title" id="admin-name"></div></div><div class="badge" id="sale-status"></div></div>
+<div class="control-actions">
+  <a class="btn secondary" href="checkin.html">CHECK-IN</a>
+  <div class="backup-action"><button class="btn secondary" type="button" id="download-backup" aria-describedby="backup-help">DOWNLOAD EVENT BACKUP (CSV)</button><p class="subtle" id="backup-help">Offline fallback for door operations.</p></div>
+  <button class="btn secondary" type="button" id="download-guest-list" disabled>DOWNLOAD GUEST LIST (PDF)</button>
+</div>
+<p class="notice" id="backup-message" role="status" hidden></p>
+<p class="notice" id="guest-list-message" role="status" hidden></p>
+<section class="kpi-summary" aria-label="Event summary">
+  <div class="kpi-row-label" id="kpi-attendance-heading">Attendance overview</div>
+  <div class="metrics kpi-attendance" aria-labelledby="kpi-attendance-heading">
+    <div class="metric"><div class="k">Paid attendees</div><div class="v" id="m-total"></div></div>
+    <div class="metric"><div class="k">Non-paying attendees</div><div class="v" id="m-non-paying"></div></div>
+    <div class="metric"><div class="k">Total attendees</div><div class="v" id="m-attendees"></div></div>
+  </div>
+  <div class="kpi-row-label" id="kpi-gender-heading">Gender composition</div>
+  <div class="metrics kpi-gender" aria-labelledby="kpi-gender-heading">
+    <div class="metric"><div class="k">Paid Men</div><div class="v" id="m-paid-men"></div><div class="s" id="m-paid-men-percent"></div></div>
+    <div class="metric"><div class="k">Paid Women</div><div class="v" id="m-paid-women"></div><div class="s" id="m-paid-women-percent"></div></div>
+    <div class="metric"><div class="k">Total Men</div><div class="v" id="m-total-men"></div><div class="s" id="m-total-men-percent"></div></div>
+    <div class="metric"><div class="k">Total Women</div><div class="v" id="m-total-women"></div><div class="s" id="m-total-women-percent"></div></div>
+  </div>
+  <p class="kpi-note" id="kpi-category-note" hidden></p>
+  <div class="kpi-row-label" id="kpi-finance-heading">Revenue / Ticket sales</div>
+  <div class="metrics kpi-finance" aria-labelledby="kpi-finance-heading">
+    <div class="metric"><div class="k">Revenue</div><div class="v" id="m-revenue"></div></div>
+    <div class="metric sales-overview"><div class="k">Ticket sales</div><div class="v" id="manual-sales-label"></div><p class="subtle" id="sales-schedule"></p></div>
+  </div>
+</section>
+<section class="card payment-verification"><h2>PAYMENT VERIFICATION</h2>
+  <p class="subtle admin-help">Review the simulated payment claim before confirming. Confirmation issues a demo QR for download.</p>
+  <p id="verification-message" class="notice" role="status" hidden></p>
+  <div class="payment-columns">
+    <div class="payment-review"><h3>TO REVIEW</h3>
+      <div class="table-wrap"><table class="guest-table"><thead><tr><th scope="col">First name</th><th scope="col">Last name</th><th scope="col">Email</th><th scope="col">Ticket category</th><th scope="col">Expected amount</th><th scope="col">Status</th><th scope="col">Reserved / Claimed</th><th scope="col">Actions</th></tr></thead><tbody id="payment-claims"></tbody></table></div>
+    </div>
+    <details class="payment-completed" id="completed-panel"><summary><span>COMPLETED / TICKETS ISSUED</span><span class="badge" id="completed-count">0</span></summary>
+      <ul id="completed-payments" aria-label="Issued tickets"></ul>
+    </details>
+  </div>
+</section>
+<section class="card edit-event"><h2>EVENT SETTINGS</h2>
+<p class="subtle admin-help">Dates and times use this device’s timezone: <span id="event-timezone"></span>. Existing reservations keep their locked price.</p>
+<p id="management-message" class="notice" role="status" hidden></p>
+<form id="event-edit-form"><div class="settings" id="settings"></div><button class="btn" type="submit">SAVE EVENT</button></form>
+</section>
+<section class="card event-library"><h2>EVENTS</h2>
+  <div class="event-columns">
+    <div class="active-event"><h3>ACTIVE EVENT</h3><div id="active-event-details"></div></div>
+    <details class="other-events" id="other-events"><summary><span>OTHER EVENTS</span><span class="badge" id="other-event-count">0</span></summary>
+      <ul id="event-list" class="management-list"></ul>
+      <details id="create-event-panel" hidden><summary>CREATE NEW EVENT</summary><p class="subtle admin-help">Creating an event does not activate it.</p><form id="event-create-form"><div class="settings" id="create-settings"></div><button class="btn" type="submit">CREATE NEW EVENT</button></form></details>
+    </details>
+  </div>
+</section>
+<section class="admin-attendees">
+<section class="card paid-attendees"><h2>Paying attendees</h2><p class="subtle admin-help">Confirmed payments only. Use CHECK-IN for scans or manual admission.</p><div class="attendee-filters"><div class="field"><label for="filter-first">First name</label><input id="filter-first" type="search" placeholder="Search first name"></div><div class="field"><label for="filter-last">Last name</label><input id="filter-last" type="search" placeholder="Search last name"></div><div class="field"><label for="filter-email">Email</label><input id="filter-email" type="search" placeholder="Search email"></div><div class="field"><label for="filter-category">Ticket category</label><select id="filter-category"><option value="">All categories</option><option value="women">Women</option><option value="men">Men</option></select></div><div class="field"><label for="filter-status">Status</label><select id="filter-status"><option value="">All statuses</option><option value="paid">Paid / Not checked in</option><option value="checked">Checked in</option></select></div><div class="field"><label for="attendee-sort">Sort by</label><select id="attendee-sort"><option value="first">First name A–Z</option><option value="last">Last name A–Z</option><option value="men">MEN first</option><option value="women">WOMEN first</option><option value="checked">Checked in first</option><option value="not-checked">Not checked in first</option></select></div></div><p id="category-message" class="subtle" role="status"></p><p id="paid-results" class="subtle admin-help" role="status"></p><div class="table-wrap"><table class="guest-table"><thead><tr><th scope="col">First name</th><th scope="col">Last name</th><th scope="col">Email</th><th scope="col">Category</th><th scope="col">Status</th><th scope="col">Ticket</th></tr></thead><tbody id="guests"></tbody></table></div></section>
+<div class="attendee-panels"><details class="card non-paying-accordion"><summary>Non-paying attendees <span class="badge" id="non-paying-count"></span></summary>
+    <p class="subtle admin-help">Includes residents. Each person occupies one physical place, with no paid ticket or revenue. Add or remove attendees below.</p>
+    <ul class="non-paying-list" id="non-paying-list"></ul>
+<form id="non-paying-form"><div class="field"><label for="np-first">First name</label><input id="np-first" maxlength="100" required></div><div class="field"><label for="np-last">Last name</label><input id="np-last" maxlength="100" required></div><div class="field"><label for="np-email">Email (optional)</label><input id="np-email" type="email" maxlength="254"></div><div class="field"><label for="np-category">Category</label><select id="np-category" required><option value="">Select category</option><option>MEN</option><option>WOMEN</option></select></div><button class="btn" type="submit">ADD ATTENDEE</button></form>
+  </details></div>
+</section></div></div></div><script src="app.js"></script><script src="admin-attendees.js"></script><script src="admin-kpis.js"></script><script src="admin-management.js"></script><script src="admin.js"></script></body></html>

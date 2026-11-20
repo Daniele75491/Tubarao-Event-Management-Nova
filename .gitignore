@@ -1,0 +1,42 @@
+# Dependencies and generated output
+node_modules/
+dist/
+coverage/
+.npm-cache/
+.pnpm-store/
+.pnpm-cache/
+.pnpm-state/
+.cache/
+*.log
+
+# Local credentials and deployment/database state
+.env
+.env.*
+!/.env.example
+*.env
+*.env.local
+.envrc
+.npmrc
+.vercel/
+supabase/.branches/
+supabase/.temp/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Private support material, attendee exports and database snapshots
+exports/
+backups/
+*.csv
+*.pdf
+*.dump
+*.backup
+*.sql.gz
+*.sqlite*
+*.db
+
+# Incidental files from the copy and local OS
+/git
+.DS_Store
+Thumbs.db

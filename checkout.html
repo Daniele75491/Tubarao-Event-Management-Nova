@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Tubarão — Checkout</title><link rel="stylesheet" href="styles.css"></head>
+<body><div class="shell"><div class="noise"></div><div class="container">
+<div class="topbar"><a href="index.html">← Back</a><div class="wordmark">TUBARÃO</div><span></span></div>
+<section class="panel">
+  <div class="eyebrow" id="event-name"></div><h1 class="panel-title" id="kind"></h1>
+  <p class="subtle" id="event-details"></p><p class="subtle" id="price"></p><div class="status" id="availability"></div>
+  <p id="state-message" class="notice" role="status" hidden></p>
+  <form id="form" novalidate>
+    <div class="form-grid">
+      <div class="field"><label for="first">First name</label><input id="first" name="first" required autocomplete="given-name" aria-describedby="first-error"><p class="field-error" id="first-error"></p></div>
+      <div class="field"><label for="last">Last name</label><input id="last" name="last" required autocomplete="family-name" aria-describedby="last-error"><p class="field-error" id="last-error"></p></div>
+      <div class="field full"><label for="email">Email</label><input id="email" type="email" name="email" required autocomplete="email" inputmode="email" autocapitalize="none" spellcheck="false" aria-describedby="email-error"><p class="field-error" id="email-error"></p></div>
+    </div>
+    <label class="checkbox" for="category-confirm"><input id="category-confirm" type="checkbox" required aria-describedby="category-confirm-error"><span>Please select the correct ticket category. Tickets purchased under the wrong category may be cancelled and refunded.</span></label>
+    <p class="field-error" id="category-confirm-error"></p>
+    <p class="instruction">Tickets are individual and non-transferable.</p>
+    <p class="subtle">By continuing, you acknowledge that you have read our <a href="/privacy.html" class="privacy-link" target="_blank" rel="noopener noreferrer">Privacy Notice</a>.</p>
+    <button class="btn" id="pay" type="submit">RESERVE MY SPOT</button>
+    <p class="field-error" id="form-error" role="alert"></p>
+  </form>
+  <section id="order-panel" class="payment-methods" hidden aria-labelledby="order-heading">
+
+    <h2 id="order-heading" class="panel-title" tabindex="-1"></h2>
+    <p id="order-copy"></p><p id="order-detail" class="subtle"></p>
+    <p id="countdown" class="reservation-clock" role="timer" aria-label="Reservation time remaining">--:--</p>
+    <div class="actions"><button class="btn" id="claim-payment" type="button">SIMULATE PAYMENT &amp; CLAIM</button></div>
+    <p id="payment-note" class="subtle" role="status">Classroom demo. No money moves.</p>
+    <p id="order-error" class="field-error" role="alert"></p>
+    <a class="btn secondary" id="restart" href="checkout.html" hidden>TRY AGAIN</a>
+  </section>
+</section></div></div><script src="app.js"></script><script src="checkout.js"></script></body></html>
