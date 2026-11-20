@@ -1,4 +1,5 @@
--- Read-only metadata queries. Run in Supabase SQL Editor and share the results.
+-- Read-only metadata queries for the disposable local classroom database.
+-- Use them to inspect an existing layout. They do not create tables or functions.
 -- These do not read guest records, passwords, tokens or project keys.
 select table_name, column_name, data_type, udt_name, is_nullable, column_default
 from information_schema.columns

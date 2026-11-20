@@ -1,29 +1,28 @@
-# Tubarão · Nova SBE classroom demo
+# Tubarão · Nova SBE classroom project
 
-This copy is for Introduction to Programming. It uses a local database, simulated payments and downloadable demo QR tickets. Use synthetic records throughout.
+Tubarão is a practice website for running a small event. It lets guests hold a place, lets organizers review reservations, and helps door staff check who has arrived.
 
-## Run the checks
+This copy is for Nova SBE’s Introduction to Programming course. Use made-up names and email addresses. Payments are pretend, and the app sends no emails.
 
-Use Node.js 24 and pnpm. The tests and public build need no integration credentials.
+## Try the demo
 
-```sh
-pnpm install --frozen-lockfile
-node --test tests/*.test.cjs
-node scripts/build.cjs
-```
+Follow one ticket from booking to the door. This is a good first activity even if you have never written code. Ask a teammate to open a configured classroom demo on their computer if you want to walk through it together.
 
-## Run locally
+1. **Guest.** Choose a ticket and reserve with a made-up name and email, such as Alex Demo and `alex@example.test`.
+2. **Guest.** Select **SIMULATE … & CLAIM**. This tells the organizer you completed the pretend payment step.
+3. **Organizer.** Review the claim. Confirm it and select **DOWNLOAD DEMO QR**. A QR code is the square image that door staff can scan.
+4. **Door staff.** Scan the code or look up the ticket by name. Try the same ticket twice to see how the app prevents a second check-in.
 
-1. Prepare a disposable Supabase stack at `http://127.0.0.1:54321`. Start with the reviewed schema-only baseline and apply the migrations in order. The baseline is a separate prerequisite.
-2. Copy [the environment template](.env.example) to an ignored `.env`. Set `DEMO_MODE=local`, use the local service key, and generate a fresh, stable demo signing secret of at least 32 UTF-8 bytes.
-3. Seed a fictional active event and synthetic `SUPER_ADMIN` and door `ADMIN` access accounts. Keep the access codes and their salts and hashes local.
-4. Run `node --env-file-if-exists=.env scripts/dev.cjs` and open `http://127.0.0.1:3000`. The runner builds the public files and serves the existing API handlers on one origin.
+## Where to start
 
-## Demo walkthrough
+Choose the guide that matches what you want to do. You can learn the booking process before setting up the software.
 
-1. Simulate the follow step, choose a category and reserve with a synthetic name and email.
-2. Select **SIMULATE … & CLAIM**. The database moves the reservation to `PAYMENT_CLAIMED`.
-3. Sign in at `/admin.html` as `SUPER_ADMIN` and confirm the claim. In completed payments, select **DOWNLOAD DEMO QR** after the ticket is issued.
-4. Sign in at `/checkin.html` as an authorized door user and scan the demo QR or use manual check-in. A second scan reports the original admission.
+| I want to… | Start here |
+| --- | --- |
+| Understand the app and why it works this way | [Project Overview](docs/PROJECT-OVERVIEW.md) |
+| Get a copy of the code and share a change with the team | [Team Handbook](docs/CONTRIBUTING.md) |
+| Ask Codex for help with your first task | [Use Codex safely](docs/CONTRIBUTING.md#use-codex-safely) |
+| Set up the project, find the code, or run the checks | [Developer Guide](docs/TECHNICAL.md) |
+| See how the app developed or what the team can improve | [Project history](docs/PROJECT-OVERVIEW.md#how-tubarão-developed) and [known limits and next ideas](docs/TECHNICAL.md#known-limits-and-next-ideas) |
 
-See [Nova demo isolation](docs/NOVA-DEMO.md) for the configuration contract, change inventory and verification results. [The original audit](docs/NOVA-PROJECT-AUDIT.md) documents the starting point.
+Setting up the complete demo on your own computer requires a separate database setup file. The developer guide explains what is missing and which checks you can run without it.

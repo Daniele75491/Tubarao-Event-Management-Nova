@@ -1,5 +1,7 @@
 # Tubarão brand manual
 
+This guide describes how Tubarão should look and sound. The classroom site keeps the visual identity and uses a local follow step. See the [Project Overview](PROJECT-OVERVIEW.md) for the current classroom flow.
+
 ## Identity and setting
 
 Tubarão is a private house-party brand founded by 10 students living together in a house/building in Carcavelos, Portugal. The founders are Master's in Management students, primarily connected to Nova SBE. The community is not Nova-exclusive: guests may come from other universities, Erasmus communities, and wider social circles.
@@ -44,7 +46,7 @@ These three colours dominate the brand. Do not introduce arbitrary additional br
 
 Headlines should be bold, condensed or strong grotesk/sans-serif, powerful, and poster-like. Uppercase is often appropriate. Acceptable directions include Anton, Archivo Black, condensed Helvetica/Arial-like styles, or similar bold sans-serif fonts. These are directions, not a requirement to install a specific font now.
 
-Body and UI text must be neutral, clean, modern, and extremely readable; Inter or a similar sans-serif is appropriate. Use a simple, strong hierarchy. Avoid decorative fonts. The prototype's actual font stack is recorded in [TECHNICAL.md](TECHNICAL.md).
+Keep body text simple and easy to read. In the current site, body text uses Arial or Helvetica, and headings use Impact or Arial Narrow where available. [Website styles](../styles.css)
 
 ## Graphic language and motion
 

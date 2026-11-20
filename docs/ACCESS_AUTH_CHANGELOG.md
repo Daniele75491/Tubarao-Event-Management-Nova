@@ -1,6 +1,6 @@
 # Access-code authentication change report
 
-Implemented locally. No commit, push, deployment, live SQL execution or real email delivery was performed.
+This historical record explains the change from account passwords to staff access codes. It records the original implementation and checks. Use the [Developer Guide](TECHNICAL.md) for current classroom setup and the [demo isolation record](NOVA-DEMO.md) for local ticket issuance. The original access-code work was checked locally without a deployment or live database changes.
 
 ## Files
 

@@ -14,7 +14,7 @@ The platform is the official ticketing gatekeeper:
 
 A payment alone is never a valid ticket. The official ticket/QR database is the source of truth at the door.
 
-This document specifies approved product requirements. The frontend now calls Vercel serverless routes backed by the existing Supabase database and RPCs. Supabase is the production source of truth. Revolut verification remains manual. Server-side QR generation and Resend ticket delivery now follow admin confirmation. Mobile admin QR and manual check-in are implemented locally; see [TECHNICAL.md](TECHNICAL.md). Deployment and live smoke testing remain separate from local implementation.
+These are the original product requirements. The [technical history](TECHNICAL-HISTORY.md) explains how they were implemented. The [Developer Guide](TECHNICAL.md) describes the current classroom app and its local setup.
 
 ## Event format and configuration
 
@@ -247,7 +247,7 @@ This is an emergency/manual fallback for door operations, not live synchronizati
 
 A customer entering the same normalized first name, last name, email and category resumes an active reservation for the current event. RESERVED retains its original server deadline and price; PAYMENT_CLAIMED returns to PAYMENT RECEIVED; PAID returns to TICKET CONFIRMED with email/inbox guidance and no website QR. Identity mismatch returns a generic conflict without details. Expired/rejected reservations use normal new-reservation rules. Browser recovery automatically revalidates the saved UUID/email; storage is never payment proof.
 
-SUPER_ADMIN may confirm a RESERVED booking after explicitly verifying the transfer in Revolut. An EXPIRED booking may also be restored, but only after a transactional physical/MEN capacity check succeeds. All protected holds and non-paying attendees count. The warning appears before submission; ADMIN/door accounts gain no permissions. REJECTED/CANCELLED bookings cannot be restored this way. Confirmation preserves actual amount, identity and audit history and reuses existing ticket delivery. Email failure leaves PAID and allows RESEND TICKET. Requires the reservation-recovery migration documented in TECHNICAL.md.
+SUPER_ADMIN may confirm a RESERVED booking after explicitly verifying the transfer in Revolut. An EXPIRED booking may also be restored, but only after a transactional physical/MEN capacity check succeeds. All protected holds and non-paying attendees count. The warning appears before submission; ADMIN/door accounts gain no permissions. REJECTED/CANCELLED bookings cannot be restored this way. Confirmation preserves actual amount, identity and audit history and reuses existing ticket delivery. Email failure leaves PAID and allows RESEND TICKET. See the [original reservation-recovery design](TECHNICAL-HISTORY.md#reservation-recovery-and-external-payment-confirmation) for migration details.
 
 
 ## Payment dashboard organization and record deletion

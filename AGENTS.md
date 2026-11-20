@@ -2,7 +2,8 @@
 
 - This copy is the Nova SBE classroom demo. Follow [NOVA-DEMO.md](docs/NOVA-DEMO.md) for runtime and integration rules. Use only loopback Supabase and synthetic data. Never connect or deploy this copy to the production services or reintroduce real payment, mail, map or social destinations.
 
-- Read this file before significant changes. Use [BRAND.md](docs/BRAND.md) for visuals and copy, [PRODUCT.md](docs/PRODUCT.md) for business rules, and [TECHNICAL.md](docs/TECHNICAL.md) for current implementation and future architecture. These documents are the project source of truth; prototype behaviour and the older README do not override approved requirements.
+- Read this file before significant changes. Use the [Developer Guide](docs/TECHNICAL.md) for current classroom behavior and [BRAND.md](docs/BRAND.md) for visuals and copy. [PRODUCT.md](docs/PRODUCT.md) records the original business rules. The classroom rules in this file take precedence for local setup, simulated payments, social links, and ticket delivery. See the [Team Handbook](docs/CONTRIBUTING.md#use-codex-safely) for working with Codex.
+- Write the README and [Project Overview](docs/PROJECT-OVERVIEW.md) for teammates with no programming experience. Open major topics with what the feature does and why it matters. Explain new terms, use short examples, and keep setup commands and implementation details in the Developer Guide.
 - Preserve working design and functionality unless asked to change them. Prefer simple, small, reviewable changes; briefly explain large refactors before starting. Do not invent features or resolve open decisions by assumption.
 - Keep the experience mobile first, fast, minimal, and appropriate to a real house party during one academic year.
 - Preserve the original shark logo and its raw character. Do not modify, redesign, replace, or generate alternative logos without explicit instruction. Do not introduce AI-generated people without explicit instruction.

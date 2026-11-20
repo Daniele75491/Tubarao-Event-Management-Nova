@@ -2,7 +2,9 @@
 
 20 November 2026 · Introduction to Programming
 
-**The reviewed source set is suitable for a private GitHub repository.** Share only files eligible under `.gitignore`. The copy has no Git history, remote, Vercel project link or Supabase CLI link. This step created no Git metadata, commit, repository or deployment. Production applications, databases, payment services and email services were untouched.
+This record explains what changed when the original project became a classroom demo. For day-to-day use, start with the [Project Overview](PROJECT-OVERVIEW.md) or the [Developer Guide](TECHNICAL.md).
+
+**The sanitization review found the source set suitable for a private GitHub repository.** At the time of that review, the copy had no Git history, remote, Vercel project link or Supabase CLI link. The sanitization step created no Git metadata or deployment and did not contact production services. For access to the classroom repository since that review, see the [Team Handbook](CONTRIBUTING.md#get-your-own-copy).
 
 ## Demo behavior
 
@@ -13,6 +15,8 @@ A signed-in `SUPER_ADMIN` can confirm or reject the claim. Confirmation persists
 The database schema and existing RPC signatures were preserved. Historical field names such as `ticket_sent_at`, `ticket_email_attempts` and `ticket_email_sent` now describe local issuance in this copy. The existing `resend-ticket` action is presented as **RETRY TICKET** and uses the same deterministic QR. The ticket template remains available as a local preview fixture. It has a classroom footer and no private map links or outbound mail transport.
 
 ## Local configuration
+
+These settings tell the app where to find the database on your computer and which key to use for demo tickets. Follow the developer guide for the setup steps.
 
 | Setting | Required value |
 | --- | --- |
@@ -27,6 +31,8 @@ Full-stack operation requires a disposable Supabase instance with a reviewed sch
 
 ## Files changed
 
+Use this list to find the changes that replaced real payments and email with a local practice flow.
+
 | Area | Files and changes |
 | --- | --- |
 | Payment and QR backend | Removed the payment URL builder `server/payments.js` and URL fields from `server/backend.js` and `server/domain.js`. Added authenticated QR download dispatch in `api/admin/payments.js`, `server/admin-routes.js`, `server/backend.js`, `server/validation.js` and `server/ticket-delivery.js`. Local issuance is shared by normal confirmation, recovery and retry. Removed the outbound transport and venue links from `server/tickets.js`. |
@@ -37,6 +43,8 @@ Full-stack operation requires a disposable Supabase instance with a reviewed sch
 | Documentation | Updated `README.md` and `AGENTS.md` for the classroom workflow. Marked `docs/PRODUCT.md`, `docs/TECHNICAL.md` and `docs/NOVA-PROJECT-AUDIT.md` as historical and removed copied live configuration details where found. Added this isolation record. |
 
 ## Verification and limitations
+
+These checks cover what was verified during the sanitization step and what still needs a running local demo.
 
 - The eligible file set was checked for credential signatures, hosted Supabase connection strings, payment destinations, venue links, operator UUIDs, Vercel identifiers and guest data. The known payment recipient, venue URLs and diagnostic IDs were also scanned across the workspace, including ignored artifacts. No matches remained. No guest roster or actual guest records were found. The original logo and 11 sampled video frames showed only brand artwork. The video retains existing provenance metadata.
 - **230 tests passed.** The fixture workflow covers reserve, claim, admin confirmation, QR issuance and download, check-in and duplicate admission. The public build passed. The local runner's request handler passed an in-process smoke check for the homepage, unconfigured read and write responses, private-file exclusion and host validation.
