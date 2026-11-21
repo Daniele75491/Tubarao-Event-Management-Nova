@@ -1,0 +1,176 @@
+"""Screen tests: open each Streamlit screen like a browser would and press its buttons.
+
+These use Streamlit's built-in AppTest, so no browser is needed.
+"""
+
+import os
+from pathlib import Path
+
+import pytest
+from streamlit.testing.v1 import AppTest
+
+import db
+import logic
+import seed
+
+ROOT = Path(__file__).resolve().parent.parent
+HARNESS = "import sys\nsys.path.insert(0, {root!r})\nimport app\napp.main({page!r})\n"
+ORGANIZER_CODE, DOOR_CODE = "organizer-code-1", "door-code-1234"
+
+
+@pytest.fixture
+def demo_db(tmp_path, monkeypatch):
+    path = tmp_path / "tubarao.db"
+    monkeypatch.setenv("TUBARAO_DB", str(path))
+    monkeypatch.delenv("TUBARAO_TICKET_SECRET", raising=False)
+    conn = db.connect(path)
+    seed.seed(conn, ORGANIZER_CODE, DOOR_CODE)
+    yield conn
+    conn.close()
+
+
+def open_screen(page: str) -> AppTest:
+    return AppTest.from_string(HARNESS.format(root=str(ROOT), page=page), default_timeout=30).run()
+
+
+def sign_in(at: AppTest, code: str) -> AppTest:
+    [field for field in at.text_input if field.label == "Access code"][0].input(code)
+    [button for button in at.button if button.label == "ENTER"][0].click()
+    return at.run()
+
+
+def button(at: AppTest, label: str):
+    return [b for b in at.button if b.label == label][0]
+
+
+def no_errors(at: AppTest) -> None:
+    assert not at.exception, [e.value for e in at.exception]
+
+
+def test_public_page_unlocks_tickets_after_the_follow_step(demo_db):
+    at = open_screen("tickets")
+    no_errors(at)
+    tickets = [b for b in at.button if b.label == "GET TICKET →"]
+    assert len(tickets) == 2 and all(b.disabled for b in tickets)
+    at.checkbox[0].check().run()
+    assert not any(b.disabled for b in at.button if b.label == "GET TICKET →")
+
+
+def test_a_guest_can_reserve_and_claim(demo_db):
+    at = open_screen("tickets")
+    at.checkbox[0].check().run()
+    [b for b in at.button if b.label == "GET TICKET →"][0].click().run()
+    at.text_input[0].input("Zara")
+    at.text_input[1].input("Screen")
+    at.text_input[2].input("zara@example.test")
+    at.checkbox[0].check()
+    button(at, "RESERVE MY SPOT").click().run()
+    no_errors(at)
+    assert any("YOUR SPOT IS RESERVED" in m.value for m in at.markdown)
+    [b for b in at.button if b.label.startswith("SIMULATE")][0].click().run()
+    assert any("DEMO PAYMENT CLAIMED" in m.value for m in at.markdown)
+
+
+def test_the_category_must_be_confirmed_before_reserving(demo_db):
+    at = open_screen("tickets")
+    at.checkbox[0].check().run()
+    [b for b in at.button if b.label == "GET TICKET →"][0].click().run()
+    at.text_input[0].input("Zara")
+    at.text_input[1].input("Screen")
+    at.text_input[2].input("zara@example.test")
+    button(at, "RESERVE MY SPOT").click().run()
+    assert any("Confirm your ticket category" in e.value for e in at.error)
+
+
+def test_staff_screens_ask_for_an_access_code(demo_db):
+    for page in ("organizer", "door"):
+        at = open_screen(page)
+        no_errors(at)
+        assert any(field.label == "Access code" for field in at.text_input)
+
+
+def test_a_wrong_access_code_is_refused(demo_db):
+    at = sign_in(open_screen("organizer"), "not-the-code")
+    assert any("INVALID ACCESS CODE" in e.value for e in at.error)
+
+
+def test_the_organizer_dashboard_shows_the_numbers(demo_db):
+    at = sign_in(open_screen("organizer"), ORGANIZER_CODE)
+    no_errors(at)
+    metrics = {m.label: m.value for m in at.metric}
+    assert metrics["PAID ATTENDEES"] == "3" and metrics["NON-PAYING ATTENDEES"] == "4"
+    assert metrics["REVENUE"] == "€24.00"
+
+
+def test_a_door_account_cannot_see_the_dashboard(demo_db):
+    at = sign_in(open_screen("organizer"), DOOR_CODE)
+    no_errors(at)
+    assert not at.metric
+    assert any("door account" in i.value for i in at.info)
+
+
+def test_the_organizer_can_save_event_settings(demo_db):
+    at = sign_in(open_screen("organizer"), ORGANIZER_CODE)
+    name = [f for f in at.text_input if f.label == "Event name"][0]
+    name.input("Renamed Party")
+    button(at, "SAVE EVENT").click().run()
+    no_errors(at)
+    assert logic.current_event(demo_db)["name"] == "Renamed Party"
+
+
+def test_the_organizer_can_add_a_non_paying_attendee(demo_db):
+    at = sign_in(open_screen("organizer"), ORGANIZER_CODE)
+    # The paying-attendee filters also say "First name"; the add form's fields come last.
+    form_fields = [f for f in at.text_input if f.label in ("First name", "Last name")][-2:]
+    form_fields[0].input("Nova")
+    form_fields[1].input("Guest")
+    button(at, "ADD NON-PAYING ATTENDEE").click().run()
+    no_errors(at)
+    event = logic.current_event(demo_db)
+    assert "Nova" in [p["first_name"] for p in db.non_paying_for_event(demo_db, event["id"])]
+
+
+def test_the_organizer_can_create_an_inactive_event(demo_db):
+    at = sign_in(open_screen("organizer"), ORGANIZER_CODE)
+    [f for f in at.text_input if f.label == "Event name"][-1].input("Spring Party")
+    button(at, "CREATE EVENT").click().run()
+    no_errors(at)
+    created = [e for e in db.all_events(demo_db) if e["name"] == "Spring Party"]
+    assert created and not created[0]["is_active"]
+
+
+def test_the_door_can_check_in_by_pasting_a_ticket_code(demo_db):
+    import tickets
+    event = logic.current_event(demo_db)
+    row = [r for r in db.reservations_for_event(demo_db, event["id"]) if r["first_name"] == "Bruno"][0]
+    payload = tickets.ticket_payload(tickets.derive_ticket_token(row["id"], row["event_id"], db.ticket_secret()))
+    at = sign_in(open_screen("door"), DOOR_CODE)
+    no_errors(at)
+    [f for f in at.text_input if f.label.startswith("…or paste")][0].input(payload)
+    button(at, "CHECK CODE").click().run()
+    no_errors(at)
+    assert any("CHECKED IN" in m.value and "Bruno" in m.value for m in at.markdown)
+
+
+def test_the_door_can_find_and_check_in_a_guest_by_name(demo_db):
+    at = sign_in(open_screen("door"), DOOR_CODE)
+    [f for f in at.text_input if f.label.startswith("Search by")][0].input("Carla").run()
+    button(at, "CHECK IN").click().run()
+    no_errors(at)
+    assert any("CHECKED IN" in m.value and "Carla" in m.value for m in at.markdown)
+
+
+def test_the_privacy_notice_opens(demo_db):
+    at = open_screen("privacy")
+    no_errors(at)
+    assert any("Privacy notice" in m.value for m in at.markdown)
+
+
+def test_an_empty_database_explains_how_to_get_started(tmp_path, monkeypatch):
+    monkeypatch.setenv("TUBARAO_DB", str(tmp_path / "empty.db"))
+    for key in ("TUBARAO_ORGANIZER_CODE", "TUBARAO_DOOR_CODE"):
+        monkeypatch.delenv(key, raising=False)
+    at = open_screen("organizer")
+    no_errors(at)
+    assert any("seed.py" in w.value for w in at.warning)
+    assert os.path.exists(tmp_path / "empty.db")

@@ -1,0 +1,22 @@
+[project]
+name = "tubarao"
+version = "1.0.0"
+description = "Tubarão event ticketing and door check-in (Nova SBE classroom copy), in Python + Streamlit"
+requires-python = ">=3.11"
+dependencies = [
+    "streamlit>=1.67",
+    "pandas>=2.2",
+    "qrcode[pil]>=8.0",
+    "pillow>=10.0",
+    "opencv-python-headless>=4.10",
+    "numpy>=1.26",
+    "fpdf2>=2.8",
+    "tzdata>=2024.1",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
