@@ -16,6 +16,9 @@ import seed
 ROOT = Path(__file__).resolve().parent.parent
 HARNESS = "import sys\nsys.path.insert(0, {root!r})\nimport app\n{setup}\napp.main({page!r})\n"
 ORGANIZER_CODE, DOOR_CODE = "organizer-code-1", "door-code-1234"
+# Seconds a screen may take to load. The very first one in a run loads Streamlit, pandas and
+# the QR libraries from scratch, which can take over 30 seconds on a Windows laptop.
+SCREEN_TIMEOUT = 120
 
 
 @pytest.fixture
@@ -31,7 +34,8 @@ def demo_db(tmp_path, monkeypatch):
 
 def open_screen(page: str, setup: str = "", query: dict | None = None) -> AppTest:
     """Open one screen. `setup` runs before the app starts; `query` fills the page address."""
-    at = AppTest.from_string(HARNESS.format(root=str(ROOT), page=page, setup=setup), default_timeout=30)
+    at = AppTest.from_string(HARNESS.format(root=str(ROOT), page=page, setup=setup),
+                               default_timeout=SCREEN_TIMEOUT)
     for key, value in (query or {}).items():
         at.query_params[key] = value
     return at.run()
@@ -256,3 +260,17 @@ def test_the_door_can_check_in_a_resident_by_name(demo_db):
     event = logic.current_event(demo_db)
     marta = [p for p in db.non_paying_for_event(demo_db, event["id"]) if p["first_name"] == "Marta"][0]
     assert marta["checked_in_at"]
+
+
+# ------------------------------------------------------------------ dashboard charts
+
+def test_the_organizer_sees_the_three_charts(demo_db):
+    at = sign_in(open_screen("organizer"), ORGANIZER_CODE)
+    no_errors(at)
+    assert any("Charts" in m.value for m in at.markdown)
+    assert len(at.get("vega_lite_chart")) == 3
+
+
+def test_the_door_account_sees_no_charts(demo_db):
+    at = sign_in(open_screen("organizer"), DOOR_CODE)
+    assert len(at.get("vega_lite_chart")) == 0

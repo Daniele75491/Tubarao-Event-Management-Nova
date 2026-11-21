@@ -1062,6 +1062,58 @@ def kpis(reservations: list[dict], non_paying: list[dict]) -> dict:
     }
 
 
+# ================================================================ dashboard charts (organizer)
+
+def sales_by_day(reservations: list[dict]) -> list[dict]:
+    """PAID tickets and their revenue per Lisbon date of confirmation, with empty days as 0."""
+    totals: dict = {}
+    for row in reservations:
+        if row["status"] == "PAID" and row["paid_at"]:
+            day = parse_time(row["paid_at"]).astimezone(LISBON).date()
+            tickets, revenue = totals.get(day, (0, 0))
+            totals[day] = (tickets + 1, revenue + row["amount_cents"])
+    if not totals:
+        return []
+    days, day = [], min(totals)
+    while day <= max(totals):
+        tickets, revenue = totals.get(day, (0, 0))
+        days.append({"day": day.isoformat(), "tickets": tickets, "revenue_cents": revenue})
+        day += timedelta(days=1)
+    return days
+
+
+def arrivals_by_quarter_hour(reservations: list[dict], non_paying: list[dict]) -> list[dict]:
+    """Check-ins (PAID tickets and non-paying guests) per 15-minute slot in Lisbon time,
+    with empty slots between the first and last arrival as 0."""
+    times = [row["checked_in_at"] for row in reservations if row["status"] == "PAID" and row["checked_in_at"]]
+    times += [row["checked_in_at"] for row in non_paying if row["checked_in_at"]]
+    counts: dict = {}
+    for value in times:
+        moment = parse_time(value).astimezone(timezone.utc)
+        slot = moment.replace(minute=moment.minute - moment.minute % 15, second=0, microsecond=0)
+        counts[slot] = counts.get(slot, 0) + 1
+    if not counts:
+        return []
+    slots, slot = [], min(counts)  # stepping in UTC keeps the order right across midnight and clock changes
+    while slot <= max(counts):
+        slots.append({"slot": slot.astimezone(LISBON).strftime("%H:%M"),
+                      "slot_start": slot.astimezone(LISBON).isoformat(), "arrivals": counts.get(slot, 0)})
+        slot += timedelta(minutes=15)
+    return slots
+
+
+def revenue_by_tier(reservations: list[dict]) -> list[dict]:
+    """PAID tickets and revenue for EARLY and LATE (always shown), plus OTHER for tickets with no tier."""
+    totals = {"EARLY": [0, 0], "LATE": [0, 0]}
+    for row in reservations:
+        if row["status"] == "PAID":
+            tier = row["pricing_tier"] if row["pricing_tier"] in ("EARLY", "LATE") else "OTHER"
+            totals.setdefault(tier, [0, 0])
+            totals[tier][0] += 1
+            totals[tier][1] += row["amount_cents"]
+    return [{"tier": tier, "tickets": tickets, "revenue_cents": revenue} for tier, (tickets, revenue) in totals.items()]
+
+
 def dashboard(conn, admin, now: datetime) -> dict:
     """Everything the organizer screen needs, read in one go."""
     admin = require_role(conn, admin)
@@ -1069,7 +1121,7 @@ def dashboard(conn, admin, now: datetime) -> dict:
         event = current_event(conn)
     except TubaraoError:
         return {"admin": admin, "event": None, "reservations": [], "non_paying": [], "kpis": kpis([], []),
-                "capacity": None}
+                "charts": None, "capacity": None}
     reservations = []
     for row in db.reservations_for_event(conn, event["id"]):
         reservations.append({**row, "status": effective_status(row, event, now),
@@ -1079,6 +1131,9 @@ def dashboard(conn, admin, now: datetime) -> dict:
     return {
         "admin": admin, "event": event, "pricing": event_pricing(event, now),
         "reservations": reservations, "non_paying": non_paying, "kpis": kpis(reservations, non_paying),
+        "charts": {"sales_by_day": sales_by_day(reservations),
+                   "arrivals": arrivals_by_quarter_hour(reservations, non_paying),
+                   "revenue_by_tier": revenue_by_tier(reservations)},
         "capacity": {**used, "physical_capacity": event["physical_capacity"], "men_paid_cap": event["men_paid_cap"],
                      "paid_capacity": event["physical_capacity"] - used["non_paying"]},
     }
