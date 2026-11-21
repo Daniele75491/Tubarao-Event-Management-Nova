@@ -29,7 +29,7 @@ To start again from a clean demo at any time, run `uv run python seed.py` again.
 2. **Organizer** (Organizer screen, organizer code). Under **PAYMENT VERIFICATION**, select the guest's row and press **CONFIRM PAID**. Open **COMPLETED / TICKETS ISSUED**, select the row again and press **DOWNLOAD DEMO QR**.
 3. **Door** (Door check-in screen, door code). Upload the QR image, or point the camera at it. You will see **CHECKED IN**. Try the same QR again to see **ALREADY CHECKED IN**.
 
-The guest's screen updates by itself when the organizer decides, without reloading.
+The guest's screen updates by itself when the organizer decides, without reloading. The booking's link (the page address after reserving) reopens it after a reload or in a new tab.
 
 ## Where everything lives
 
@@ -41,7 +41,8 @@ The guest's screen updates by itself when the organizer decides, without reloadi
 | `tickets.py` | **The QR code.** Makes the secret ticket token, draws the QR image and reads QR photos. |
 | `guest_list_pdf.py` | Draws the printable guest list. |
 | `seed.py` | Resets the database with demo data and access codes. |
-| `tests/` | About 145 automated checks: one file per area, plus `test_app.py`, which opens the screens and presses buttons. |
+| `specs/` | One short spec (Why / What / Out of scope / Done when) per feature added after the port. |
+| `tests/` | About 170 automated checks: one file per area, plus `test_app.py`, which opens the screens and presses buttons. |
 | `AGENTS.md` | The rulebook for AI coding agents working in this folder. |
 
 A button press travels like this: **`app.py` → a function in `logic.py` → `db.py`**. For example, **CONFIRM PAID** calls `logic.confirm_payment()`. That function checks that you are the organizer and that the booking was claimed in time. It then saves `PAID` through `db.py` and calls `logic.issue_ticket()`, which uses `tickets.py`.
@@ -84,19 +85,25 @@ Everything in the classroom JavaScript app was ported:
   - demo QR issue, retry and download, amount adjustment with private history, category correction, and deleting records or duplicate paid tickets
   - event editing (capacity, MEN cap, prices, pricing mode, sales schedule), creating and activating events, and non-paying attendees
   - the CSV backup and the PDF guest list
-- **Door:** QR check-in that works only once, name/email search with manual check-in, and live attendance refreshing every 5 seconds.
+- **Door:** QR check-in that works only once, name/email search with manual check-in (paid and non-paying guests), and live attendance refreshing every 5 seconds.
 
 ### What is different
 
 - **Database.** The JavaScript copy needed a Supabase setup that the repository does not contain, so it could not run end to end. This version keeps everything in one SQLite file and works straight away. The safety rules the Supabase functions enforced now live in `logic.py`, and each runs inside one transaction. Two phones scanning the same ticket at once still cannot both let a guest in.
 - **Staff sign-in lasts while the browser tab stays open.** Moving between screens keeps you signed in. Reloading the page asks for the code again, because Streamlit cannot set the secure cookie the original used. Sessions still end after 12 hours, and **LOG OUT** ends them straight away.
-- **Finding a booking again.** The original remembered it in the browser. Here a guest re-enters the same name, email and category, or uses the **booking reference** shown on their booking screen.
+- **Finding a booking again.** The original remembered it in browser storage. Here the booking reference goes in the page address (`?booking=...`), so reloading or reopening that link brings the booking back. The link shows no name or email; to claim the payment from a reopened link, the guest types their email once.
 - **The camera takes a photo** of the QR code instead of scanning continuously. You can also upload the QR image or paste its code, which is handy for testing on a laptop.
-- **Smaller changes.** The hero video is left out; the original logo is used unchanged. Fields named after email delivery were renamed, for example `ticket_sent_at` became `ticket_issued_at`. The PDF uses the DejaVu Sans font (included, with its licence in `assets/fonts/`).
+- **Smaller changes.** The landing page plays the original hero video (muted, looping, no controls); the other screens use the original logo unchanged. Fields named after email delivery were renamed, for example `ticket_sent_at` became `ticket_issued_at`. The PDF uses the DejaVu Sans font (included, with its licence in `assets/fonts/`).
 
 ### Kept as open decisions, as in the original
 
-Refunds, editable FEW TICKETS LEFT thresholds, editing the Instagram handle, and check-in for non-paying attendees are not built. The original product notes list them as future ideas, so they make good next features. Write a spec and tests for each one first.
+Refunds, editable FEW TICKETS LEFT thresholds and editing the Instagram handle are not built. The original product notes list them as future ideas, so they make good next features. Write a spec and tests for each one first.
+
+## Added after the port
+
+- **Remember a booking through its link:** `specs/remember-booking.md`
+- **Hero video on the landing page:** `specs/hero-video.md`
+- **Check in non-paying guests at the door:** `specs/non-paying-check-in.md`
 
 ## Settings
 

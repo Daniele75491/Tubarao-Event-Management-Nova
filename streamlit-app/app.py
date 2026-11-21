@@ -32,6 +32,7 @@ from logic import TubaraoError
 
 APP_DIR = Path(__file__).parent
 LOGO = APP_DIR / "assets" / "tubarao-logo.jpeg"
+HERO_VIDEO = APP_DIR / "assets" / "tubarao-hero.mp4"
 STATUS_WORDS = {"AVAILABLE": "AVAILABLE", "FEW_TICKETS_LEFT": "FEW TICKETS LEFT", "SOLD_OUT": "SOLD OUT"}
 
 
@@ -146,6 +147,16 @@ h1, h2, h3, .display { font-family: Impact, "Arial Narrow", sans-serif !importan
 .banner .display { font-size:46px; }
 .banner p { margin:8px 0 0; font-size:18px; }
 .banner.ok { background:#1F5CFF; } .banner.warn { background:#B7791F; } .banner.bad { background:#C93333; }
+/* Hero video: zoom in on the shark, fade the edges, hide the player controls (as on the original site). */
+.st-key-hero { position:relative; width:min(560px,100%); aspect-ratio:1120/470; margin:0 auto 8px; overflow:hidden;
+  -webkit-mask-image:linear-gradient(to right,transparent,#000 12%,#000 88%,transparent),
+                     linear-gradient(to bottom,transparent,#000 18%,#000 82%,transparent);
+  -webkit-mask-composite:source-in; mask-composite:intersect;
+  mask-image:linear-gradient(to right,transparent,#000 12%,#000 88%,transparent),
+             linear-gradient(to bottom,transparent,#000 18%,#000 82%,transparent); }
+.st-key-hero video { display:block; width:100%; aspect-ratio:1120/470; object-fit:cover; object-position:center;
+  transform:scale(1.6); pointer-events:none; }
+.st-key-hero video::-webkit-media-controls, .st-key-hero video::-webkit-media-controls-enclosure { display:none !important; }
 [data-testid="stHeaderActionElements"] { display:none; }  /* no link icons next to headings */
 [data-testid="stImage"] img { mix-blend-mode: screen; }   /* logo's black blends into the page */
 .pill { display:inline-block; padding:2px 10px; border-radius:999px; border:1px solid var(--line); font-size:12px;
@@ -200,20 +211,66 @@ def staff_bar(identity: dict, title: str) -> None:
 def page_tickets() -> None:
     style()
     c = conn()
-    st.image(str(LOGO), width="stretch")
+    link_error = open_booking_from_address()
     try:
         state = logic.public_state(c, now())
     except TubaraoError:
+        hero(video=False)
         st.markdown("<h2 class='center'>No event right now</h2>"
                     "<p class='center eyebrow'>Follow Tubarão for the next announcement.</p>", unsafe_allow_html=True)
         return
 
     if st.session_state.get("booking") and st.session_state.get("show_booking", True):
+        hero(video=False)
         booking_screen(state)
     elif st.session_state.get("checkout_category"):
+        hero(video=False)
         checkout_screen(state, st.session_state.checkout_category)
     else:
+        hero(video=True)
+        if link_error:
+            st.error(link_error)
         landing_screen(state)
+
+
+def hero(video: bool) -> None:
+    """The top of the Tickets screen: the looping shark video on the landing page, the still logo elsewhere."""
+    if video and HERO_VIDEO.exists():
+        with st.container(key="hero"):
+            st.video(str(HERO_VIDEO), autoplay=True, muted=True, loop=True)
+    else:
+        st.image(str(LOGO), width="stretch")
+
+
+def remember_booking(reservation_id: str, email: str | None) -> None:
+    """Keep the booking for this browser tab, and put its reference in the page address
+    (?booking=...) so a reload or the same link opens it again."""
+    st.session_state.booking = {"reservation_id": reservation_id, "email": email}
+    st.session_state.show_booking = True
+    st.query_params["booking"] = reservation_id
+
+
+def forget_booking() -> None:
+    for key in ("booking", "show_booking"):
+        st.session_state.pop(key, None)
+    st.query_params.pop("booking", None)
+
+
+def open_booking_from_address() -> str | None:
+    """If the address has ?booking=<reference>, open that booking. Returns an error message if it can't."""
+    reference = st.query_params.get("booking")
+    current = st.session_state.get("booking")
+    if not reference or (current and current["reservation_id"] == reference.strip().lower()):
+        return None
+    try:
+        view = logic.booking_by_reference(conn(), reference, now())
+    except TubaraoError as error:
+        st.query_params.pop("booking", None)
+        return error.message
+    # Opened from the link: we know the booking but not the email, so claiming will ask for it.
+    st.session_state.booking = {"reservation_id": view["reservation_id"], "email": None}
+    st.session_state.show_booking = True
+    return None
 
 
 def landing_screen(state: dict) -> None:
@@ -279,8 +336,7 @@ def landing_screen(state: dict) -> None:
                 except TubaraoError as error:
                     st.error(error.message)
                 else:
-                    st.session_state.booking = {"reservation_id": reference.strip().lower(), "email": email}
-                    st.session_state.show_booking = True
+                    remember_booking(reference.strip().lower(), email)
                     st.rerun()
     st.page_link(PAGES["privacy"], label="Privacy notice")
 
@@ -319,8 +375,7 @@ def checkout_screen(state: dict, category: str) -> None:
             except TubaraoError as error:
                 st.error(error.message)
                 return
-            st.session_state.booking = {"reservation_id": result["reservation_id"], "email": email}
-            st.session_state.show_booking = True
+            remember_booking(result["reservation_id"], email)
             st.session_state.pop("checkout_category", None)
             if result.get("resumed"):
                 flash("info", "Welcome back — this is your existing booking.")
@@ -351,9 +406,14 @@ def booking_screen(state: dict) -> None:
 def booking_panel(minutes: int) -> None:
     """Re-reads the booking from the database every 2 seconds, so the guest sees
     the organizer's decision without reloading."""
-    booking = st.session_state.booking
+    booking = st.session_state.get("booking")
+    if not booking:
+        return
     try:
-        view = logic.reservation_state(conn(), booking["reservation_id"], booking["email"], now())
+        if booking["email"]:
+            view = logic.reservation_state(conn(), booking["reservation_id"], booking["email"], now())
+        else:  # opened from the link in the address: no email known yet
+            view = logic.booking_by_reference(conn(), booking["reservation_id"], now())
     except TubaraoError as error:
         st.error(error.message)
         return
@@ -367,11 +427,16 @@ def booking_panel(minutes: int) -> None:
     if status == "RESERVED":
         st.markdown(f"<div class='big-timer'>{countdown_text(logic.parse_time(view['reserved_until']))}</div>",
                     unsafe_allow_html=True)
+        email = booking["email"]
+        if not email:
+            email = st.text_input("Your email (the one you booked with)", key="claim_email")
         if st.button(f"SIMULATE {logic.public_price(view['amount_cents'])} & CLAIM", type="primary", width="stretch"):
             try:
-                logic.claim_payment(conn(), booking["reservation_id"], booking["email"], now())
+                logic.claim_payment(conn(), booking["reservation_id"], email, now())
             except TubaraoError as error:
                 st.session_state.claim_error = error.message
+            else:
+                booking["email"] = email  # proven: no need to ask again in this tab
             st.rerun()
         st.caption("Classroom demo. No money moves.")
     if st.session_state.get("claim_error"):
@@ -381,11 +446,11 @@ def booking_panel(minutes: int) -> None:
                    "If it’s still missing, contact the organizers.")
     if status in ("EXPIRED", "REJECTED", "CANCELLED"):
         if st.button("TRY AGAIN", type="primary", width="stretch"):
-            for key in ("booking", "show_booking"):
-                st.session_state.pop(key, None)
+            forget_booking()
             st.rerun(scope="app")
 
-    st.caption("Booking reference — keep it with your email to find this booking again:")
+    st.caption("Booking reference. This page's link reopens your booking; keep the reference with your email "
+               "as a backup:")
     st.code(view["reservation_id"], language=None)
 
 
@@ -500,7 +565,7 @@ def manual_search(identity: dict) -> None:
             st.rerun()
     query = st.text_input("Search by first name, last name or email", key="door_query")
     if not query.strip():
-        st.caption("Only paid tickets that have not checked in can be admitted here.")
+        st.caption("Paid tickets and non-paying guests (residents, invited) can be admitted here.")
         return
     try:
         found = logic.search_attendees(conn(), identity, query, now())
@@ -513,12 +578,18 @@ def manual_search(identity: dict) -> None:
         with st.container(border=True):
             left, right = st.columns([3, 1], vertical_alignment="center")
             status = "CHECKED IN " + logic.lisbon(person["checked_in_at"], "%H:%M") if person["checked_in_at"] else person["status"]
+            email = f"{esc(person['email'])} · " if person["email"] else ""
             left.markdown(f"**{esc(person['first_name'])} {esc(person['last_name'])}** · {person['category']}  \n"
-                          f"{esc(person['email'])} · <span class='pill'>{esc(status)}</span>", unsafe_allow_html=True)
-            if person["status"] == "PAID" and not person["checked_in_at"]:
-                if right.button("CHECK IN", key=f"in_{person['reservation_id']}", type="primary", width="stretch"):
-                    st.session_state.manual_result = run_check_in(logic.check_in_manual, identity, person["reservation_id"])
-                    st.rerun()
+                          f"{email}<span class='pill'>{esc(status)}</span>", unsafe_allow_html=True)
+            if person["checked_in_at"] or person["status"] not in ("PAID", "NON-PAYING"):
+                continue
+            if person["type"] == "NON-PAYING":
+                action, target = logic.check_in_non_paying, person["attendee_id"]
+            else:
+                action, target = logic.check_in_manual, person["reservation_id"]
+            if right.button("CHECK IN", key=f"in_{target}", type="primary", width="stretch"):
+                st.session_state.manual_result = run_check_in(action, identity, target)
+                st.rerun()
     if found["more"]:
         st.caption("More matches exist. Type more of the name to narrow the list.")
 

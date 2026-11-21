@@ -414,6 +414,21 @@ def reservation_state(conn, reservation_id, email, now: datetime) -> dict:
     return reservation_view(row, event, now)
 
 
+def booking_by_reference(conn, reference, now: datetime) -> dict:
+    """Reopen a booking from the link in the page address (?booking=<reference>).
+
+    The reference is a long random ID that nobody can guess, and the view it
+    returns has no name or email in it. Claiming the payment still needs the
+    email (see claim_payment), so a shared link cannot be used to claim.
+    """
+    if not isinstance(reference, str) or not tickets.UUID_PATTERN.match(reference.strip()):
+        raise TubaraoError("RESERVATION_NOT_FOUND")
+    row = db.get_reservation(conn, reference.strip().lower())
+    if row is None:
+        raise TubaraoError("RESERVATION_NOT_FOUND")
+    return reservation_view(row, db.get_event(conn, row["event_id"]), now)
+
+
 def claim_payment(conn, reservation_id, email, now: datetime) -> dict:
     """The guest says "I've paid" (simulated in the classroom demo).
 
@@ -958,8 +973,27 @@ def check_in_manual(conn, admin, reservation_id: str, now: datetime) -> dict:
         return _check_in(conn, admin, db.get_reservation(conn, reservation_id), now)
 
 
+def check_in_non_paying(conn, admin, attendee_id: str, now: datetime) -> dict:
+    """Let a resident or invited guest in. They have no QR, so the door finds them by name.
+    Single-use and active event only, exactly like a paid ticket."""
+    require_role(conn, admin, DOOR_ROLES)
+    with db.transaction(conn):
+        guest = db.get_non_paying(conn, attendee_id) if isinstance(attendee_id, str) else None
+        if guest is None or guest["event_id"] != current_event(conn)["id"]:
+            return {"result": "INVALID"}
+        result = {"first_name": guest["first_name"], "last_name": guest["last_name"], "category": guest["category"]}
+        if guest["checked_in_at"]:
+            return {"result": "ALREADY_CHECKED_IN", **result, "checked_in_at": guest["checked_in_at"]}
+        db.update(conn, "non_paying_attendees", guest["id"], {"checked_in_at": to_iso(now)})
+        return {"result": "CHECKED_IN", **result, "checked_in_at": to_iso(now)}
+
+
 def search_attendees(conn, admin, query: str, now: datetime, limit: int = 30) -> dict:
-    """Find bookings of the active event by first name, last name, full name or email."""
+    """Find people of the active event by first name, last name, full name or email.
+
+    Returns paid-side bookings (type PAID, with their booking status) and
+    non-paying guests (type NON-PAYING, status NON-PAYING).
+    """
     require_role(conn, admin, DOOR_ROLES)
     if not isinstance(query, str) or len(query) > 100 or _CONTROL.search(query):
         raise TubaraoError("INVALID_INPUT", "Use up to 100 characters to search.")
@@ -967,14 +1001,20 @@ def search_attendees(conn, admin, query: str, now: datetime, limit: int = 30) ->
     needle = query.strip().lower()
     if not needle:
         return {"attendees": [], "more": False}
-    matches = [row for row in db.reservations_for_event(conn, event["id"])
-               if any(needle in str(value).lower() for value in
-                      (row["first_name"], row["last_name"], row["email"], f"{row['first_name']} {row['last_name']}"))]
-    attendees = [{"reservation_id": row["id"], "first_name": row["first_name"], "last_name": row["last_name"],
-                  "email": row["email"], "category": row["category"],
-                  "status": effective_status(row, event, now), "checked_in_at": row["checked_in_at"]}
-                 for row in matches[:limit]]
-    return {"attendees": attendees, "more": len(matches) > limit}
+
+    def matches(row: dict) -> bool:
+        texts = (row["first_name"], row["last_name"], row["email"] or "", f"{row['first_name']} {row['last_name']}")
+        return any(needle in text.lower() for text in texts)
+
+    found = [{"type": "PAID", "reservation_id": row["id"], "first_name": row["first_name"],
+              "last_name": row["last_name"], "email": row["email"], "category": row["category"],
+              "status": effective_status(row, event, now), "checked_in_at": row["checked_in_at"]}
+             for row in db.reservations_for_event(conn, event["id"]) if matches(row)]
+    found += [{"type": "NON-PAYING", "attendee_id": row["id"], "first_name": row["first_name"],
+               "last_name": row["last_name"], "email": row["email"], "category": row["category"],
+               "status": "NON-PAYING", "checked_in_at": row["checked_in_at"]}
+              for row in db.non_paying_for_event(conn, event["id"]) if matches(row)]
+    return {"attendees": found[:limit], "more": len(found) > limit}
 
 
 def presence(conn, admin) -> dict:

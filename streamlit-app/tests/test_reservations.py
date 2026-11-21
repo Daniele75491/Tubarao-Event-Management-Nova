@@ -96,3 +96,36 @@ def test_the_guest_view_never_contains_the_qr_or_staff_data(conn, paid):
     view = logic.reservation_state(conn, booking["reservation_id"], booking["email"], NOW)
     assert view["status"] == "PAID"
     assert not {"qr_token_hash", "confirmed_by_access_id", "email"} & set(view)
+
+
+# ------------------------------------------------------------------ remembering a booking by its link
+
+def test_a_booking_can_be_reopened_by_its_reference_alone(conn, event, book):
+    booking = book("MEN")
+    view = logic.booking_by_reference(conn, booking["reservation_id"], NOW + timedelta(minutes=1))
+    assert (view["reservation_id"], view["category"], view["status"]) == (booking["reservation_id"], "MEN", "RESERVED")
+
+
+def test_a_reopened_booking_shows_no_name_or_email(conn, event, book):
+    booking = book(first="Ana", email="ana@example.test")
+    view = logic.booking_by_reference(conn, booking["reservation_id"], NOW)
+    assert "Ana" not in str(view) and "ana@example.test" not in str(view)
+
+
+def test_a_reopened_booking_shows_its_real_status(conn, event, book):
+    booking = book()
+    later = NOW + timedelta(minutes=25)
+    assert logic.booking_by_reference(conn, booking["reservation_id"], later)["status"] == "EXPIRED"
+
+
+@pytest.mark.parametrize("reference", ["", "not-a-reference", "00000000-0000-0000-0000-000000000000", None, 42])
+def test_unknown_or_malformed_references_are_refused(conn, event, reference):
+    with pytest.raises(logic.TubaraoError) as error:
+        logic.booking_by_reference(conn, reference, NOW)
+    assert error.value.code == "RESERVATION_NOT_FOUND"
+
+
+def test_references_are_accepted_in_capitals_or_with_spaces(conn, event, book):
+    booking = book()
+    view = logic.booking_by_reference(conn, "  " + booking["reservation_id"].upper() + " ", NOW)
+    assert view["reservation_id"] == booking["reservation_id"]

@@ -14,7 +14,7 @@ import logic
 import seed
 
 ROOT = Path(__file__).resolve().parent.parent
-HARNESS = "import sys\nsys.path.insert(0, {root!r})\nimport app\napp.main({page!r})\n"
+HARNESS = "import sys\nsys.path.insert(0, {root!r})\nimport app\n{setup}\napp.main({page!r})\n"
 ORGANIZER_CODE, DOOR_CODE = "organizer-code-1", "door-code-1234"
 
 
@@ -29,8 +29,12 @@ def demo_db(tmp_path, monkeypatch):
     conn.close()
 
 
-def open_screen(page: str) -> AppTest:
-    return AppTest.from_string(HARNESS.format(root=str(ROOT), page=page), default_timeout=30).run()
+def open_screen(page: str, setup: str = "", query: dict | None = None) -> AppTest:
+    """Open one screen. `setup` runs before the app starts; `query` fills the page address."""
+    at = AppTest.from_string(HARNESS.format(root=str(ROOT), page=page, setup=setup), default_timeout=30)
+    for key, value in (query or {}).items():
+        at.query_params[key] = value
+    return at.run()
 
 
 def sign_in(at: AppTest, code: str) -> AppTest:
@@ -174,3 +178,81 @@ def test_an_empty_database_explains_how_to_get_started(tmp_path, monkeypatch):
     no_errors(at)
     assert any("seed.py" in w.value for w in at.warning)
     assert os.path.exists(tmp_path / "empty.db")
+
+
+# ------------------------------------------------------------------ remembering a booking by its link
+
+def reserve_on_screen(at: AppTest, email: str = "zara@example.test") -> AppTest:
+    at.checkbox[0].check().run()
+    [b for b in at.button if b.label == "GET TICKET →"][0].click().run()
+    at.text_input[0].input("Zara")
+    at.text_input[1].input("Screen")
+    at.text_input[2].input(email)
+    at.checkbox[0].check()
+    return button(at, "RESERVE MY SPOT").click().run()
+
+
+def test_reserving_puts_the_booking_reference_in_the_address(demo_db):
+    at = reserve_on_screen(open_screen("tickets"))
+    reference = at.query_params.get("booking")
+    reference = reference[0] if isinstance(reference, list) else reference
+    assert reference and db.get_reservation(demo_db, reference)["email"] == "zara@example.test"
+
+
+def test_opening_the_address_again_shows_the_booking(demo_db):
+    booking = logic.reserve(demo_db, "Zara", "Link", "zara@example.test", "WOMEN", logic.utcnow())
+    at = open_screen("tickets", query={"booking": booking["reservation_id"]})
+    no_errors(at)
+    assert any("YOUR SPOT IS RESERVED" in m.value for m in at.markdown)
+    assert not any("Zara" in m.value or "zara@example.test" in m.value for m in at.markdown)
+
+
+def test_claiming_from_a_reopened_link_needs_the_right_email(demo_db):
+    booking = logic.reserve(demo_db, "Zara", "Link", "zara@example.test", "WOMEN", logic.utcnow())
+    at = open_screen("tickets", query={"booking": booking["reservation_id"]})
+    email = [f for f in at.text_input if f.label.startswith("Your email")][0]
+    email.input("someone.else@example.test")
+    [b for b in at.button if b.label.startswith("SIMULATE")][0].click().run()
+    assert any("Reservation not found" in e.value for e in at.error)
+    assert db.get_reservation(demo_db, booking["reservation_id"])["status"] == "RESERVED"
+    [f for f in at.text_input if f.label.startswith("Your email")][0].input("zara@example.test")
+    [b for b in at.button if b.label.startswith("SIMULATE")][0].click().run()
+    no_errors(at)
+    assert db.get_reservation(demo_db, booking["reservation_id"])["status"] == "PAYMENT_CLAIMED"
+
+
+def test_an_unknown_reference_in_the_address_falls_back_to_the_event_page(demo_db):
+    at = open_screen("tickets", query={"booking": "not-a-reference"})
+    no_errors(at)
+    assert any("Reservation not found" in e.value for e in at.error)
+    assert any(b.label == "GET TICKET →" for b in at.button)
+
+
+# ------------------------------------------------------------------ hero video
+
+def test_the_landing_page_plays_the_hero_video_and_checkout_shows_the_logo(demo_db):
+    at = open_screen("tickets")
+    assert len(at.get("video")) == 1 and len(at.get("image")) == 0
+    at.checkbox[0].check().run()
+    [b for b in at.button if b.label == "GET TICKET →"][0].click().run()
+    assert len(at.get("video")) == 0 and len(at.get("image")) == 1
+
+
+def test_without_the_video_file_the_logo_is_shown(demo_db):
+    at = open_screen("tickets", setup="from pathlib import Path\napp.HERO_VIDEO = Path('missing.mp4')")
+    no_errors(at)
+    assert len(at.get("video")) == 0 and len(at.get("image")) == 1
+
+
+# ------------------------------------------------------------------ non-paying check-in at the door
+
+def test_the_door_can_check_in_a_resident_by_name(demo_db):
+    at = sign_in(open_screen("door"), DOOR_CODE)
+    [f for f in at.text_input if f.label.startswith("Search by")][0].input("Marta").run()
+    assert any("NON-PAYING" in m.value for m in at.markdown)
+    button(at, "CHECK IN").click().run()
+    no_errors(at)
+    assert any("CHECKED IN" in m.value and "Marta" in m.value for m in at.markdown)
+    event = logic.current_event(demo_db)
+    marta = [p for p in db.non_paying_for_event(demo_db, event["id"]) if p["first_name"] == "Marta"][0]
+    assert marta["checked_in_at"]
