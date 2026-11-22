@@ -361,6 +361,7 @@ def checkout_screen(state: dict, category: str) -> None:
         first_name = st.text_input("First name", max_chars=100)
         last_name = st.text_input("Last name", max_chars=100)
         email = st.text_input("Email", max_chars=254, placeholder="you@example.test")
+        promo_code = st.text_input("Promo code (optional)", max_chars=20)
         st.warning("Please select the correct ticket category. Tickets purchased under the wrong category may be "
                    "cancelled and refunded.")
         right_category = st.checkbox(f"I confirm my ticket category is {category}.")
@@ -372,14 +373,15 @@ def checkout_screen(state: dict, category: str) -> None:
                 st.error("Confirm your ticket category to continue.")
                 return
             try:
-                result = logic.reserve(conn(), first_name, last_name, email, category, now())
+                result = logic.reserve(conn(), first_name, last_name, email, category, now(), promo_code=promo_code)
             except TubaraoError as error:
                 st.error(error.message)
                 return
             remember_booking(result["reservation_id"], email)
             st.session_state.pop("checkout_category", None)
             if result.get("resumed"):
-                flash("info", "Welcome back — this is your existing booking.")
+                note = " It keeps its original price, so the promo code was not applied." if promo_code.strip() else ""
+                flash("info", "Welcome back — this is your existing booking." + note)
             st.rerun()
 
 
@@ -422,8 +424,10 @@ def booking_panel(minutes: int) -> None:
     heading, text = BOOKING_COPY.get(status, ("ORDER UNAVAILABLE", "Please try again."))
     st.markdown(f"<h1 class='center'>{heading}</h1>", unsafe_allow_html=True)
     st.markdown(f"<p class='center'>{esc(text.format(minutes=minutes))}</p>", unsafe_allow_html=True)
-    st.markdown(f"<p class='center eyebrow'>{view['category']} · {logic.public_price(view['amount_cents'])}</p>",
-                unsafe_allow_html=True)
+    price = logic.public_price(view["amount_cents"])
+    if view["promo_code"]:  # e.g. NOVA20 · €8 → €6.40
+        price = f"{esc(view['promo_code'])} · {logic.public_price(view['list_price_cents'])} → {price}"
+    st.markdown(f"<p class='center eyebrow'>{view['category']} · {price}</p>", unsafe_allow_html=True)
 
     if status == "RESERVED":
         st.markdown(f"<div class='big-timer'>{countdown_text(logic.parse_time(view['reserved_until']))}</div>",
@@ -660,6 +664,7 @@ def page_organizer() -> None:
     st.divider()
     edit_event(identity, event)
     other_events(identity, event)
+    promo_codes_panel(identity, event)
     st.divider()
     paying_attendees(identity, data)
     non_paying_attendees(identity, data)
@@ -784,6 +789,7 @@ def payment_verification(identity: dict, data: dict) -> None:
     columns = {
         "First name": lambda r: r["first_name"], "Last name": lambda r: r["last_name"], "Email": lambda r: r["email"],
         "Category": lambda r: r["category"], "Expected amount": lambda r: logic.money(r["amount_cents"]),
+        "Promo": lambda r: r["promo_code"] or "",
         "Status": lambda r: r["status"].replace("_", " "),
         "Reserved": lambda r: logic.lisbon(r["created_at"], "%d %b %H:%M"),
         "Claimed": lambda r: logic.lisbon(r["claimed_at"], "%d %b %H:%M"),
@@ -803,7 +809,8 @@ def reservation_actions(identity: dict, r: dict) -> None:
     c, secret = conn(), db.ticket_secret()
     with st.container(border=True):
         st.markdown(f"**{esc(r['first_name'])} {esc(r['last_name'])}** · {esc(r['email'])} · {r['category']} · "
-                    f"expected **{logic.money(r['amount_cents'])}** ({r['pricing_tier'] or 'tier unknown'}) · "
+                    f"expected **{logic.money(r['amount_cents'])}** ({r['pricing_tier'] or 'tier unknown'}"
+                    f"{', ' + esc(r['promo_code']) + ' from ' + logic.money(r['list_price_cents']) if r['promo_code'] else ''}) · "
                     f"<span class='pill'>{r['status'].replace('_', ' ')}</span>", unsafe_allow_html=True)
         buttons = st.columns(4)
         status, stored = r["status"], r["stored_status"]
@@ -993,6 +1000,48 @@ def other_events(identity: dict, event: dict | None) -> None:
         if st.button("CREATE EVENT", type="primary"):
             st.session_state.new_event_round = st.session_state.get("new_event_round", 0) + 1
             act(logic.create_event, conn(), identity, values, now(), success="Event created (inactive).")
+
+
+# ---------------------------------------------------------------- promo codes
+
+def promo_codes_panel(identity: dict, event: dict) -> None:
+    """PROMO CODES: list the active event's codes, switch them on/off, create new ones (rules in logic.py)."""
+    codes = logic.promo_codes(conn(), identity, now())
+    # The key makes Streamlit remember whether the section is open, so it stays open after creating a code.
+    with st.expander("PROMO CODES", key="promo_section", on_change="rerun"):
+        st.caption(f"{len(codes)} code(s) for this event. Guests type a code at checkout for a percent off the current EARLY or LATE price. "
+                   "A use is taken while the booking holds a place, and freed if it expires or is rejected.")
+        chosen = _table(codes, {
+            "Code": lambda c: c["code"], "Percent off": lambda c: f"{c['percent_off']}%",
+            "Uses": lambda c: f"{c['uses']} / {c['max_uses']}" if c["max_uses"] else f"{c['uses']} (no limit)",
+            "Expires": lambda c: logic.lisbon(c["expires_at"]) if c["expires_at"] else "Never",
+            "Active": lambda c: "YES" if c["is_active"] else "NO",
+        }, "promo_table")
+        if chosen:
+            label = f"DEACTIVATE {chosen['code']}" if chosen["is_active"] else f"ACTIVATE {chosen['code']}"
+            if st.button(label, key="promo_toggle"):
+                act(logic.set_promo_code_active, conn(), identity, chosen["id"], not chosen["is_active"], now(),
+                    success=f"{chosen['code']} is now {'inactive' if chosen['is_active'] else 'active'}.")
+
+        st.markdown("**CREATE CODE**")
+        prefix = f"promo_new_{st.session_state.get('promo_round', 0)}"  # fresh inputs after each code
+        a, b, c = st.columns(3)
+        code = a.text_input("Code", key=f"{prefix}_code", max_chars=20, placeholder="NOVA20",
+                            help="3 to 20 letters, numbers or dashes. Saved in capitals.")
+        percent = b.number_input("Percent off", 1, 90, 10, key=f"{prefix}_percent")
+        uses = c.number_input("Maximum uses (0 = no limit)", 0, 100000, 0, key=f"{prefix}_uses")
+        expires = when_input("Expires", None, f"{prefix}_expires")
+        if st.button("CREATE CODE", type="primary", key=f"{prefix}_create"):
+            try:
+                created = logic.create_promo_code(conn(), identity, event["id"], code, int(percent),
+                                                  int(uses) or None, expires, now())
+            except TubaraoError as error:
+                st.error(error.message)  # keep what was typed so it can be fixed
+                return
+            st.session_state.promo_round = st.session_state.get("promo_round", 0) + 1
+            flash("success", f"Promo code {created['code']} created.")
+            reset_tables()
+            st.rerun()
 
 
 # ---------------------------------------------------------------- attendee lists
