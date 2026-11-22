@@ -94,6 +94,9 @@ MESSAGES = {
     "INVALID_PROMO_CODE": "Use 3 to 20 letters, numbers or dashes, a percent from 1 to 90, "
                           "and at least 1 use if you set a limit.",
     "PROMO_CODE_EXISTS": "This event already has that code.",
+    "CODE_IN_USE": "Choose a different access code.",
+    "STAFF_NOT_FOUND": "Staff account not found. Refresh the dashboard.",
+    "CANNOT_CHANGE_SELF": "You can't deactivate your own account.",
 }
 
 TICKET_FAILED = "Demo ticket could not be issued. Use RETRY TICKET."
@@ -562,9 +565,8 @@ def create_access_account(conn, label: str, role: str, code: str) -> str:
         raise TubaraoError("INVALID_INPUT", "Access codes need at least 8 characters.")
     label = clean_name(label)
     with db.transaction(conn):
-        for account in db.active_accounts(conn):
-            if hmac.compare_digest(hash_access_code(code, account["code_salt"]), account["code_hash"]):
-                raise TubaraoError("INVALID_INPUT", "Choose a different access code.")
+        if _code_taken(conn, code):
+            raise TubaraoError("CODE_IN_USE")
         salt = secrets.token_hex(16)
         account_id = _new_id()
         db.insert(conn, "admin_access_accounts", {
@@ -572,6 +574,81 @@ def create_access_account(conn, label: str, role: str, code: str) -> str:
             "code_salt": salt, "code_hash": hash_access_code(code, salt), "is_active": 1,
         })
     return account_id
+
+
+def _code_taken(conn, code: str, except_id: str | None = None) -> bool:
+    """Is this code already used by another account, active or not?
+
+    Sign-in finds an account by its code alone, so two active accounts must never share one.
+    Deactivated accounts count too: only a fingerprint of each code is stored, so when an
+    account is activated again we could not tell whether its old code was reused meanwhile.
+    """
+    accounts = db.fetch_all(conn, "SELECT id, code_salt, code_hash FROM admin_access_accounts")
+    return any(hmac.compare_digest(hash_access_code(code, account["code_salt"]), account["code_hash"])
+               for account in accounts if account["id"] != except_id)
+
+
+def _clean_code(code) -> str:
+    code = code.strip() if isinstance(code, str) else ""
+    if not 8 <= len(code) <= 512:
+        raise TubaraoError("INVALID_INPUT", "Access codes need at least 8 characters.")
+    return code
+
+
+def _revoke_sessions(conn, account_id: str, now: datetime) -> None:
+    conn.execute("UPDATE admin_sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at IS NULL",
+                 (to_iso(now), account_id))
+
+
+def staff_accounts(conn, admin) -> list[dict]:
+    """Organizer: every staff account, without codes or their hashes."""
+    require_role(conn, admin)
+    rows = db.fetch_all(conn, "SELECT id, label, role, is_active, last_login_at FROM admin_access_accounts "
+                              "ORDER BY role DESC, label")
+    return rows
+
+
+def add_staff_account(conn, admin, label, role, code, now: datetime) -> str:
+    """Organizer: a new door (ADMIN) or organizer (SUPER_ADMIN) account. Returns its ID."""
+    require_role(conn, admin)
+    return create_access_account(conn, label, role, _clean_code(code))
+
+
+def _staff_row(conn, account_id) -> dict:
+    account = db.get_account(conn, account_id) if isinstance(account_id, str) else None
+    if account is None:
+        raise TubaraoError("STAFF_NOT_FOUND")
+    return account
+
+
+def set_staff_active(conn, admin, account_id, active: bool, now: datetime) -> dict:
+    """Organizer: switch an account off (signed out at once) or back on (with its old code)."""
+    admin = require_role(conn, admin)
+    with db.transaction(conn):
+        account = _staff_row(conn, account_id)
+        if not active:
+            if account["id"] == admin["account_id"]:
+                raise TubaraoError("CANNOT_CHANGE_SELF")
+            db.update(conn, "admin_access_accounts", account["id"], {"is_active": 0})
+            _revoke_sessions(conn, account["id"], now)
+        else:  # safe: no other account can have been given this account's code (see _code_taken)
+            db.update(conn, "admin_access_accounts", account["id"], {"is_active": 1})
+    return {"account_id": account_id, "is_active": bool(active)}
+
+
+def reset_staff_code(conn, admin, account_id, new_code, now: datetime) -> dict:
+    """Organizer: give an account a new code. The old code stops working and the account is signed out."""
+    require_role(conn, admin)
+    code = _clean_code(new_code)
+    with db.transaction(conn):
+        account = _staff_row(conn, account_id)
+        if _code_taken(conn, code, except_id=account["id"]):
+            raise TubaraoError("CODE_IN_USE")
+        salt = secrets.token_hex(16)
+        db.update(conn, "admin_access_accounts", account["id"],
+                  {"code_salt": salt, "code_hash": hash_access_code(code, salt)})
+        _revoke_sessions(conn, account["id"], now)
+    return {"account_id": account_id, "reset": True}
 
 
 def _token_hash(token: str) -> str:

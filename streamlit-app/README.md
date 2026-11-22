@@ -40,9 +40,9 @@ The guest's screen updates by itself when the organizer decides, without reloadi
 | `db.py` | **The storage.** Creates the tables in one SQLite file (`data/tubarao.db`) and reads/saves rows. It also adds new columns to an older database file automatically, so you never need to delete your data when a feature is added. |
 | `tickets.py` | **The QR code.** Makes the secret ticket token, draws the QR image and reads QR photos. |
 | `guest_list_pdf.py` | Draws the printable guest list. |
-| `seed.py` | Resets the database with demo data and access codes. |
+| `seed.py` | Resets the database with demo data and the first two access codes. After that, manage staff accounts from the dashboard's STAFF ACCESS section. |
 | `specs/` | One short spec (Why / What / Out of scope / Done when) per feature added after the port. |
-| `tests/` | About 230 automated checks: one file per area, plus `test_app.py`, which opens the screens and presses buttons. |
+| `tests/` | About 250 automated checks: one file per area, plus `test_app.py`, which opens the screens and presses buttons. |
 | `AGENTS.md` | The rulebook for AI coding agents working in this folder. |
 
 A button press travels like this: **`app.py` → a function in `logic.py` → `db.py`**. For example, **CONFIRM PAID** calls `logic.confirm_payment()`. That function checks that you are the organizer and that the booking was claimed in time. It then saves `PAID` through `db.py` and calls `logic.issue_ticket()`, which uses `tickets.py`.
@@ -106,6 +106,7 @@ Refunds, editable FEW TICKETS LEFT thresholds and editing the Instagram handle a
 - **Check in non-paying guests at the door:** `specs/non-paying-check-in.md`
 - **Charts on the organizer dashboard** (tickets sold per day, arrivals per 15 minutes, revenue by price tier): `specs/dashboard-charts.md`
 - **Promo codes** (percent off at checkout, with optional use limit and expiry): `specs/promo-codes.md`
+- **Staff management** (add, deactivate and reset staff access codes from the dashboard, without `seed.py`): `specs/staff-management.md`
 
 ## Settings
 
