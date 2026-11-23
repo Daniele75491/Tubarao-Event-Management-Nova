@@ -25,13 +25,14 @@ Example: **CONFIRM PAID** in `app.py` calls `logic.confirm_payment()`. That func
 
 | File | Size | What it does | Look at |
 | --- | --- | --- | --- |
-| `app.py` | ~1,090 lines | **The screens.** Draws the four pages with Streamlit and collects clicks. It never decides a rule and never writes to the database itself. | `page_tickets`, `page_door`, `page_organizer`, `page_privacy`, `main`, `act` |
-| `logic.py` | ~1,140 lines | **The rules.** Prices, capacity, the MEN cap, holds and deadlines, sign-in, who may do what, single-use check-in, corrections and exports. If a rule says no, it raises `TubaraoError` with a short code such as `MEN_SOLD_OUT`. | `reserve`, `claim_payment`, `confirm_payment`, `check_in_qr`, `occupancy`, `effective_status`, `require_role` |
+| `app.py` | ~1,130 lines | **The screens.** Draws the four pages with Streamlit and collects clicks. It never decides a rule and never writes to the database itself. | `page_tickets`, `page_door`, `page_organizer`, `page_privacy`, `main`, `act` |
+| `logic.py` | ~1,190 lines | **The rules.** Prices, capacity, the MEN cap, holds and deadlines, sign-in, who may do what, single-use check-in, corrections and exports. If a rule says no, it raises `TubaraoError` with a short code such as `MEN_SOLD_OUT`. | `reserve`, `claim_payment`, `confirm_payment`, `check_in_qr`, `occupancy`, `effective_status`, `require_role` |
 | `db.py` | ~290 lines | **The storage.** Creates the tables (`SCHEMA`) in one SQLite file and has small helpers to read and save rows. Its `transaction()` makes several steps all-or-nothing. | `connect`, `transaction`, `SCHEMA` |
-| `tickets.py` | 100 lines | **The QR code.** Makes the secret ticket token, draws the QR image and reads QR photos with OpenCV. | `derive_ticket_token`, `hash_ticket_token`, `parse_payload`, `decode_qr_image` |
+| `tickets.py` | 115 lines | **The QR code.** Makes the secret ticket token, draws the QR image and reads QR photos with two OpenCV readers, because one alone misses a few codes. | `derive_ticket_token`, `hash_ticket_token`, `parse_payload`, `decode_qr_image` |
 | `guest_list_pdf.py` | 82 lines | Draws the printable guest list with `fpdf2` and the DejaVu font, so accents like "ã" work. | `render` |
-| `seed.py` | 110 lines | Deletes the demo database and fills a new one with made-up data and two access codes. | `seed`, `main` |
-| `tests/` | 14 files | 216 automated checks, run with `uv run pytest`. | `conftest.py` (shared setup), `test_qa_*.py` (QA additions) |
+| `seed.py` | 214 lines | Asks first, then replaces the demo database with a new one holding made-up data and two access codes. The new file is built separately, so a failure keeps the old data. | `seed`, `check_codes`, `main` |
+| `selection.py` | 58 lines | Remembers which organizer table row is selected by its booking ID, never by its position, so a changing list cannot redirect an action. | |
+| `tests/` | 18 files | 274 automated checks, run with `uv run pytest`. | `conftest.py` (shared setup), `test_qa_*.py` (QA additions) |
 
 **Streamlit**, in one paragraph: Streamlit reruns the whole page script from top to bottom every time someone clicks. Values that must survive a rerun live in `st.session_state`, which belongs to one browser tab. That is why `app.py` keeps the database connection (`conn()`) and the staff session token (`staff_token`) there. `@st.fragment(run_every="5s")` reruns only one part of the page every few seconds, for example `live_attendance` on the door screen.
 
@@ -61,7 +62,7 @@ RESERVED ──guest claims──► PAYMENT_CLAIMED ──organizer confirms─
 - `claim_payment` moves RESERVED to PAYMENT_CLAIMED and stores `claimed_at`. The claim is protected for `claim_hold_hours`.
 - `confirm_payment` (organizer only) moves PAYMENT_CLAIMED to PAID and issues the ticket. `reject_payment` sets REJECTED.
 - `confirm_external_payment` is the recovery path, for when the organizer saw the money but the guest never claimed. It can also restore an EXPIRED booking, but only after checking capacity again.
-- **Expiry is computed, not scheduled.** No timer runs in the background. `effective_status()` looks at the clock: a RESERVED row past `reserved_until` *is* EXPIRED, even if the database still says RESERVED. `expire_elapsed()` saves that change the next time someone books.
+- **Expiry is computed, not scheduled.** No timer runs in the background. `effective_status()` looks at the clock: a RESERVED row past `reserved_until` *is* EXPIRED, even if the database still says RESERVED. `expire_elapsed()` saves that change whenever the active event's bookings are read: public page, booking view, door search, dashboard and backup CSV.
 
 ## The rules that matter most
 
@@ -112,16 +113,16 @@ Only `TUBARAO:` plus a 43-character token (`tickets.ticket_payload`). There is n
 `logic.login` compares the code with every active account using `scrypt` with a random salt (`hash_access_code`). Only the salt and hash are stored. A session token is created and only its SHA-256 is stored in `admin_sessions`. Sessions last 12 hours (`SESSION_HOURS`), and LOG OUT revokes them.
 
 **8. What can door staff do that the organizer cannot, and the other way round?**
-Every action calls `require_role`, which reads the role from the database rather than trusting the screen. `ADMIN` (door) is allowed only in `DOOR_ROLES` actions: check-in, search and live attendance. `SUPER_ADMIN` can do everything. This is tested by `test_door_staff_cannot_use_any_organizer_payment_or_ticket_action`.
+Every action calls `require_role`, which reads the role from the database rather than trusting the screen. It also checks that the session still exists and is not revoked or expired, so a window left open after LOG OUT cannot act. `ADMIN` (door) is allowed only in `DOOR_ROLES` actions: check-in, search and live attendance. `SUPER_ADMIN` can do everything. This is tested by `test_door_staff_cannot_use_any_organizer_payment_or_ticket_action`.
 
 **9. Why does a booking keep its price when the price goes up?**
 `reserve` copies the current price into the booking's own `amount_cents` and `pricing_tier`. Prices on the event only affect new bookings. This is tested by `test_a_booking_keeps_its_status_deadline_and_price_after_the_database_reopens`.
 
 **10. How do holds expire if nothing runs in the background?**
-`effective_status()` compares `reserved_until` (or `claimed_at + claim_hold_hours`) with the current time whenever the booking is read. `expire_elapsed()` then saves EXPIRED during the next booking. So expiry is always correct when it matters, with no scheduler.
+`effective_status()` compares `reserved_until` (or `claimed_at + claim_hold_hours`) with the current time whenever the booking is read. `expire_elapsed()` then saves EXPIRED, in the same transaction, whenever the active event's bookings are read. So expiry is always correct when it matters, with no scheduler.
 
 **11. What do the tests cover, and what do they not cover?**
-216 checks. They cover:
+274 checks. They cover:
 - every rule in `logic.py`, including refused actions such as SOLD_OUT, FORBIDDEN, INVALID and an expired claim;
 - the screens, with Streamlit's `AppTest` in `test_app.py`;
 - a full booking-to-door run on a real file;

@@ -10,8 +10,8 @@ This report says what was tested in the Python version of Tubarão, what passed,
 
 | Item | Value |
 | --- | --- |
-| Code under test | Branch `python-streamlit` (PR #1) at commit `d92526169e38795e4d4aff5bb36317745520e969`, "Remember bookings by link, hero video, non-paying check-in" |
-| Why that commit | GitHub could not be reached from the test computer (no sign-in), so this is the latest PR #1 commit that the local copy knew about. **If Afonso pushed after it, rerun the tests on the new code.** |
+| Code under test | Branch `python-streamlit` (PR #1) at commit `21dd584b113ae6e0f3533916d97dc5b6f652c277`, "Fix review findings: expiry, safe setup, sessions, ID selection, QR scanning, Windows docs" |
+| Why that commit | It was the latest PR #1 commit on GitHub on 23 November. The tests were written against the previous commit (`d925261`) and then rerun on `21dd584` with no changes needed. **If Afonso pushes again, rerun the tests on the new code.** |
 | Folder | `streamlit-app/` |
 | Computer | macOS (Apple Silicon), Python 3.14.0, SQLite 3.50.4, Streamlit 1.67.0, uv 0.13.9 |
 | Dependencies | Installed exactly from `uv.lock` with `uv sync --locked`. Nothing was upgraded or overridden. |
@@ -23,14 +23,14 @@ All commands run inside `streamlit-app/`.
 
 | Command | Result |
 | --- | --- |
-| `uv run --locked pytest` (before my work) | **171 passed**, 0 failed, 0 warnings |
-| `uv run --locked pytest` (with the new tests) | **215 passed, 1 xfailed**, 0 failed, 0 warnings, about 18 s |
+| `uv run --locked pytest` without the QA files | **229 passed**, 0 failed, 0 warnings |
+| `uv run --locked pytest` (with the new tests) | **273 passed, 1 xfailed**, 0 failed, 0 warnings, about 50 s |
 | `uv run --locked pytest tests/test_qa_workflow.py tests/test_qa_rules.py tests/test_qa_concurrency.py` | **44 passed, 1 xfailed** |
 | `uv run --locked pytest tests/test_qa_concurrency.py`, run 3 times in a row | 5 passed each time (no flaky results) |
 
 "xfailed" means "expected to fail". That one test describes the correct behaviour for QA-BUG-1, which the app does not have yet. It is marked `xfail(strict=True)`. When Afonso fixes the bug, pytest will report it as XPASS and the run will fail on purpose, so nobody forgets to remove the mark.
 
-No existing test was changed, skipped or deleted. No application file was changed.
+No existing test was changed, skipped or deleted. No application file was changed by this QA work.
 
 ### Do the new tests really catch mistakes?
 
@@ -77,7 +77,7 @@ Letters follow the QA assignment. "Existing" means the original suite already co
 
 ## Manual demo results
 
-The app was run with `streamlit run app.py` against a throwaway database seeded by `seed.py`, and clicked through in a browser.
+The app was run with `streamlit run app.py` against a throwaway database seeded by `seed.py`, and clicked through in a browser. This was done on commit `d925261`, before Afonso's review fixes. The fixes change no step of this walkthrough, and the screen tests in `test_app.py` pass on `21dd584`, but the click-through was not repeated on that commit.
 
 | # | Step | Result |
 | --- | --- | --- |
@@ -118,7 +118,7 @@ Suggested owner: Afonso (application logic). A small fix is to compare `row["eve
 
 ### QA-2 · Low · The guest screen mentions email that is never sent
 
-`app.py` line 445 tells guests who claimed: "Can't find your ticket later? Check your spam or junk folder too." The classroom app sends no email. This could confuse the audience during the demo. Suggest removing the line.
+`app.py` line 463 tells guests who claimed: "Can't find your ticket later? Check your spam or junk folder too." The classroom app sends no email. This could confuse the audience during the demo. Suggest removing the line.
 
 ### QA-3 · Low · Organizer buttons are cut off on a laptop screen
 
@@ -130,13 +130,13 @@ In `kpi_panel` (`app.py`), the MEN CAP card's small text shows "N paid checked i
 
 ### QA-5 · Info · The backup CSV lists every booking, not only valid tickets
 
-`event_backup_csv` writes every reservation of the event, including REJECTED, EXPIRED and still-RESERVED ones. All of them have Type `PAID`, and the stored status is used, so a hold that ran out can still say `RESERVED`. Times are UTC in ISO format. The file name starts with `Tubarao_Tubarao_` when the event name contains "Tubarão".
+`event_backup_csv` writes every reservation of the event, including REJECTED, EXPIRED and still-RESERVED ones. All of them have Type `PAID`. Since `21dd584`, holds that ran out are saved as EXPIRED before the file is written, so the Status column is correct. Times are UTC in ISO format. The file name starts with `Tubarao_Tubarao_` when the event name contains "Tubarão".
 
 This copies the original JavaScript version exactly (`server/event-backup.js` on `main`), so it was **not** treated as a bug. At the door, filter the Status column to `PAID`. Use the PDF guest list for a clean list of who may enter.
 
 ### QA-6 · Info · Reseeding while the app is running
 
-`seed.py` deletes `data/tubarao.db` and creates a new one, but a running Streamlit app keeps its old connections. **Always stop the app (Ctrl+C) before running `seed.py`, then start it again.** The runbook includes this.
+`seed.py` now asks before replacing `data/tubarao.db` and builds the new file separately, so a failure keeps the old data. A running Streamlit app still keeps its connection to the old file, though. **Always stop the app (Ctrl+C) before running `seed.py`, then start it again.** The runbook includes this.
 
 ### QA-7 · Info · Door staff can download the live attendance table
 
@@ -158,7 +158,8 @@ Streamlit adds a "Download as CSV" button to every table. On the door screen, th
 | Data on the hosting service | The app saves to a local SQLite file. Whether that file survives a restart depends on the host. | Restart the deployed app once and check that bookings are still there |
 | PDF text content in tests | No PDF reader is in the locked dependencies, so tests check the guest-list data, not the PDF text | The manual check confirmed the PDF content |
 | Phone-sized layout, other browsers | Not clicked through | Open the public URL on a phone before the demo |
-| Latest PR #1 commits | GitHub could not be reached from the test computer | Rerun `uv run pytest` after pulling |
+| Manual click-through on `21dd584` | Done on `d925261`, before the review fixes | Rehearse the runbook once on the final code |
+| PR #1 changes after `21dd584` | Not yet written when this report was made | Rerun `uv run pytest` after pulling |
 
 ## Demo readiness
 
@@ -167,6 +168,6 @@ Streamlit adds a "Download as CSV" button to every table. On the door screen, th
 | It works | ✅ Every workflow in the runbook works locally. ⚠️ Not yet checked on the deployed URL. |
 | User interface | ✅ Clear results and errors. ⚠️ QA-2, QA-3 and QA-4 are small fixes worth making. |
 | Scope and ambition | ✅ Many integrated features: pricing, capacity, roles, QR, door, exports |
-| Verification | ✅ 215 tests, including rejected actions, edge cases, persistence and concurrency, all passing. Remember: the course wants them passing **on main**. |
-| Security | ✅ Roles are checked against the database on every action; codes and tokens are stored only as hashes; dependencies are pinned in `uv.lock`; `data/` and secrets are git-ignored |
+| Verification | ✅ 273 tests, including rejected actions, edge cases, persistence and concurrency, all passing. Remember: the course wants them passing **on main**. |
+| Security | ✅ Roles and sessions are checked against the database on every action; codes and tokens are stored only as hashes; dependencies are pinned in `uv.lock`; `data/` and secrets are git-ignored |
 | Walkthrough | See [CODE-WALKTHROUGH.md](CODE-WALKTHROUGH.md) for likely questions and answers |

@@ -83,11 +83,15 @@ Locally, in `streamlit-app/`:
    export TUBARAO_ORGANIZER_CODE=pick-a-new-code TUBARAO_DOOR_CODE=pick-another-code
    ```
 
+   Each code needs at least 8 characters, and the two must be different.
+
 3. Reset and start again:
 
    ```bash
    uv run python seed.py
    ```
+
+   It asks before replacing the database: type `y` and press Enter. If anything fails, the old data is kept.
 
    ```bash
    uv run streamlit run app.py
