@@ -6,7 +6,7 @@ The **Python and Streamlit app** in `streamlit-app/` is the university submissio
 
 ## Try the live demo
 
-[Open the Tubarão Nova demo](https://tubarao-event-management-nova-gjnjzm2wnuszqjv9ionfjb.streamlit.app/)
+Open the guest demo in your browser. You can try it without signing in to Streamlit. [Open the Tubarão Nova demo](https://tubarao-event-management-nova-gjnjzm2wnuszqjv9ionfjb.streamlit.app/)
 
 1. Under **Tickets**, confirm the classroom follow step, choose a ticket category, and reserve a place with a fictional name and email such as Alex Demo and `alex@example.test`.
 2. Press **SIMULATE … & CLAIM**. This tells the organizer you completed the pretend payment step.

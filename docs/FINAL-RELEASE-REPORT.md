@@ -1,6 +1,6 @@
 # Tubarão Nova final release report
 
-**Recommendation — READY WITH LIMITATIONS.** The tested release ran locally and completed the classroom demo from booking to check-in. The team can present the single-event demo using synthetic data. The deployed URL still needs an automated availability check before relying on it for the presentation.
+**Recommendation — READY WITH LIMITATIONS.** The tested release ran locally and completed the classroom demo from booking to check-in. The team can present the single-event demo using synthetic data. The live demo was also verified in a fresh browser without Streamlit sign-in.
 
 ## What was tested
 
@@ -64,6 +64,8 @@ The demo uses SQLite and simulated payments. The checks examined the tested rele
 
 The Cloud dashboard shows that this app runs from the university repository's `main` branch at `streamlit-app/app.py`. Startup logs showed that Streamlit used the committed `uv.lock` and started the server. The Cloud logs did not identify the exact running commit.
 
-The hosted classroom event and ticket categories rendered in an authorized browser, and the runtime health check returned `ok`. The organizer and door pages both required an app access code. A fresh anonymous session was redirected to Streamlit authorization in the access check before the public release.
+The app was changed to public while its GitHub repository remained private. A fresh Edge InPrivate session opened the live site without signing in, showed the Tubarão Classroom Demo event, displayed the WOMEN and MEN ticket categories, and opened the reservation form. The form was left empty and no reservation was submitted. The organizer and door pages still required an access code.
+
+An anonymous HTTP client followed Streamlit's redirects and reached the homepage with HTTP 200. The runtime health endpoint returned HTTP 200 and `ok`. No startup error appeared in the browser. [Open the live Tubarão Nova demo](https://tubarao-event-management-nova-gjnjzm2wnuszqjv9ionfjb.streamlit.app/)
 
 Keep one event active throughout the presentation. Have the verified local demo available as a fallback. If the camera fails, door staff can use name search or paste the decoded ticket text.
