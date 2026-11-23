@@ -60,9 +60,9 @@ The guest's screen updates by itself when the organizer decides, without reloadi
 | `tickets.py` | **The QR code.** Makes the secret ticket token, draws the QR image and reads QR photos (with two OpenCV readers, because one alone misses a few codes). |
 | `selection.py` | Remembers which row of an organizer table is selected by its booking ID, never by row position. |
 | `guest_list_pdf.py` | Draws the printable guest list. |
-| `seed.py` | Resets the database with demo data and access codes. |
+| `seed.py` | Resets the database with demo data and the first two access codes. After that, manage staff accounts from the dashboard's STAFF ACCESS section. |
 | `specs/` | One short spec (Why / What / Out of scope / Done when) per feature added after the port. |
-| `tests/` | About 290 automated checks: one file per area, plus `test_app.py`, which opens the screens and presses buttons. |
+| `tests/` | About 310 automated checks: one file per area, plus `test_app.py`, which opens the screens and presses buttons. |
 | `AGENTS.md` | The rulebook for AI coding agents working in this folder. |
 
 A button press travels like this: **`app.py` → a function in `logic.py` → `db.py`**. For example, **CONFIRM PAID** calls `logic.confirm_payment()`. That function checks that you are the organizer and that the booking was claimed in time. It then saves `PAID` through `db.py` and calls `logic.issue_ticket()`, which uses `tickets.py`.
@@ -126,6 +126,7 @@ Refunds, editable FEW TICKETS LEFT thresholds and editing the Instagram handle a
 - **Check in non-paying guests at the door:** `specs/non-paying-check-in.md`
 - **Charts on the organizer dashboard** (tickets sold per day, arrivals per 15 minutes, revenue by price tier): `specs/dashboard-charts.md`
 - **Promo codes** (percent off at checkout, with optional use limit and expiry): `specs/promo-codes.md`
+- **Staff management** (add, deactivate and reset staff access codes from the dashboard, without `seed.py`): `specs/staff-management.md`
 - **Fixes from the PR #1 review** (expiry saved, safe setup and reset, sessions rechecked, ID-based selection, reliable QR scanning, Windows setup): `specs/review-fixes.md`
 
 ## Settings

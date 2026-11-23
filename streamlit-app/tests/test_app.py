@@ -327,6 +327,31 @@ def test_a_refused_promo_code_keeps_what_the_organizer_typed(demo_db):
     assert [f for f in at.text_input if f.label == "Code"][0].value == "no spaces"
 
 
+# ------------------------------------------------------------------ staff management
+
+def test_the_organizer_adds_a_door_account_that_can_sign_in(demo_db):
+    at = sign_in(open_screen("organizer"), ORGANIZER_CODE)
+    fields = {f.label: f for f in at.text_input}
+    fields["Name"].input("Door phone 2")
+    fields["New access code"].input("second-door-code")
+    fields["Repeat the code"].input("second-door-code")
+    button(at, "ADD ACCOUNT").click().run()
+    no_errors(at)
+    door = sign_in(open_screen("door"), "second-door-code")
+    no_errors(door)
+    assert any("Door phone 2" in m.value for m in door.markdown)
+
+
+def test_mismatched_codes_are_refused_on_screen(demo_db):
+    at = sign_in(open_screen("organizer"), ORGANIZER_CODE)
+    fields = {f.label: f for f in at.text_input}
+    fields["Name"].input("Door phone 2")
+    fields["New access code"].input("second-door-code")
+    fields["Repeat the code"].input("something-else-1")
+    button(at, "ADD ACCOUNT").click().run()
+    assert any("codes don't match" in e.value for e in at.error)
+
+
 def test_a_hosted_first_start_with_bad_codes_explains_why(tmp_path, monkeypatch):
     monkeypatch.setenv("TUBARAO_DB", str(tmp_path / "fresh.db"))
     monkeypatch.setenv("TUBARAO_ORGANIZER_CODE", "same-code-123")
