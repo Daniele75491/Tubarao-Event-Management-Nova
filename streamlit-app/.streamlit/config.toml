@@ -1,0 +1,15 @@
+# Tubarão brand colours: black, bone white and Atlantic blue.
+[theme]
+base = "dark"
+primaryColor = "#1F5CFF"
+backgroundColor = "#0B0B0B"
+secondaryBackgroundColor = "#161616"
+textColor = "#F3F0E8"
+font = "sans serif"
+
+[client]
+showSidebarNavigation = true
+toolbarMode = "minimal"
+
+[server]
+maxUploadSize = 10

@@ -1,0 +1,7 @@
+# Live database, signing key and access codes: never commit these.
+data/
+.streamlit/secrets.toml
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
