@@ -87,6 +87,13 @@ MESSAGES = {
     "TICKET_NOT_FOUND": "Issued demo ticket not found for the active event.",
     "TICKET_HASH_MISMATCH": "Ticket signing key does not match the existing ticket. Restore the original signing secret.",
     "PAYMENT_NOT_CONFIRMED": "Only paid reservations can receive a ticket.",
+    "PROMO_CODE_NOT_FOUND": "This promo code doesn't exist.",
+    "PROMO_CODE_INACTIVE": "This promo code is no longer active.",
+    "PROMO_CODE_EXPIRED": "This promo code has expired.",
+    "PROMO_CODE_USED_UP": "This promo code has been fully used.",
+    "INVALID_PROMO_CODE": "Use 3 to 20 letters, numbers or dashes, a percent from 1 to 90, "
+                          "and at least 1 use if you set a limit.",
+    "PROMO_CODE_EXISTS": "This event already has that code.",
 }
 
 TICKET_FAILED = "Demo ticket could not be issued. Use RETRY TICKET."
@@ -363,6 +370,8 @@ def reservation_view(row: dict, event: dict, now: datetime) -> dict:
         "category": row["category"],
         "status": effective_status(row, event, now),
         "amount_cents": row["amount_cents"],
+        "list_price_cents": row["list_price_cents"] if row.get("list_price_cents") is not None else row["amount_cents"],
+        "promo_code": row.get("promo_code"),
         "pricing_tier": row["pricing_tier"],
         "reserved_until": row["reserved_until"],
         "claimed_at": row["claimed_at"],
@@ -372,12 +381,14 @@ def reservation_view(row: dict, event: dict, now: datetime) -> dict:
 
 # ================================================================ guest actions
 
-def reserve(conn, first_name, last_name, email, category, now: datetime) -> dict:
+def reserve(conn, first_name, last_name, email, category, now: datetime, promo_code: str | None = None) -> dict:
     """Hold a place for a guest, or resume the booking they already have.
 
     Entering the same name, email and category again returns the existing
-    live booking with its original deadline and price. A different name or
-    category for the same email is refused without saying why.
+    live booking with its original deadline and price (any promo code typed
+    then is ignored). A different name or category for the same email is
+    refused without saying why. A valid promo code lowers the price of a new
+    booking; an invalid one refuses the booking with the reason.
     """
     first_name, last_name = clean_name(first_name), clean_name(last_name)
     email, category = clean_email(email), clean_category(category)
@@ -404,10 +415,15 @@ def reserve(conn, first_name, last_name, email, category, now: datetime) -> dict
             raise TubaraoError("MEN_SOLD_OUT")
 
         pricing = event_pricing(event, now)
+        list_price = pricing["current_price_cents"]
+        code = usable_promo_code(conn, event, promo_code, now)  # None when no code was typed
         row = {
             "id": _new_id(), "event_id": event["id"],
             "first_name": first_name, "last_name": last_name, "email": email, "category": category,
-            "amount_cents": pricing["current_price_cents"], "pricing_tier": pricing["phase"],
+            "amount_cents": discounted_price(list_price, code["percent_off"]) if code else list_price,
+            "list_price_cents": list_price,
+            "promo_code_id": code["id"] if code else None, "promo_code": code["code"] if code else None,
+            "pricing_tier": pricing["phase"],
             "status": "RESERVED",
             "reserved_until": to_iso(now + timedelta(minutes=event["reservation_minutes"])),
             "created_at": to_iso(now), "updated_at": to_iso(now),
@@ -419,6 +435,82 @@ def reserve(conn, first_name, last_name, email, category, now: datetime) -> dict
                 raise TubaraoError("ACTIVE_RESERVATION_EXISTS") from error
             raise
         return {**reservation_view(db.get_reservation(conn, row["id"]), event, now), "resumed": False}
+
+
+# ================================================================ promo codes
+
+PROMO_PATTERN = re.compile(r"^[A-Z0-9-]{3,20}$")
+
+
+def discounted_price(cents: int, percent_off: int) -> int:
+    """Price after a percent discount, rounded to the nearest cent (half a cent rounds up), never below 1 cent."""
+    return max(1, (cents * (100 - percent_off) + 50) // 100)
+
+
+def promo_uses(conn, event: dict, code_id: str, now: datetime) -> int:
+    """Uses taken = bookings with this code that still hold a place (live hold, live claim or PAID)."""
+    return sum(1 for row in db.reservations_for_event(conn, event["id"])
+               if row["promo_code_id"] == code_id and occupies_place(row, event, now))
+
+
+def usable_promo_code(conn, event: dict, typed, now: datetime) -> dict | None:
+    """The promo code a guest typed, if it can be used right now. Empty means no code.
+    Otherwise it raises the reason: doesn't exist, inactive, expired or fully used."""
+    if typed is None or not str(typed).strip():
+        return None
+    code = db.promo_code_by_code(conn, event["id"], str(typed).strip().upper())
+    if code is None:
+        raise TubaraoError("PROMO_CODE_NOT_FOUND")
+    if not code["is_active"]:
+        raise TubaraoError("PROMO_CODE_INACTIVE")
+    if code["expires_at"] and now >= parse_time(code["expires_at"]):
+        raise TubaraoError("PROMO_CODE_EXPIRED")
+    if code["max_uses"] is not None and promo_uses(conn, event, code["id"], now) >= code["max_uses"]:
+        raise TubaraoError("PROMO_CODE_USED_UP")
+    return code
+
+
+def create_promo_code(conn, admin, event_id, code, percent_off, max_uses, expires_at, now: datetime) -> dict:
+    """Organizer: a new discount code for the active event. Saved in capitals, unique within the event."""
+    require_role(conn, admin)
+    text = code.strip().upper() if isinstance(code, str) else ""
+    whole = lambda value: isinstance(value, int) and not isinstance(value, bool)  # noqa: E731
+    if (not PROMO_PATTERN.match(text) or not whole(percent_off) or not 1 <= percent_off <= 90
+            or (max_uses is not None and (not whole(max_uses) or max_uses < 1))):
+        raise TubaraoError("INVALID_PROMO_CODE")
+    try:
+        expires = to_iso(expires_at)
+    except TubaraoError as error:
+        raise TubaraoError("INVALID_PROMO_CODE") from error
+    with db.transaction(conn):
+        if current_event(conn)["id"] != event_id:
+            raise TubaraoError("EVENT_CHANGED")
+        if db.promo_code_by_code(conn, event_id, text):
+            raise TubaraoError("PROMO_CODE_EXISTS")
+        row = {"id": _new_id(), "event_id": event_id, "code": text, "percent_off": percent_off,
+               "max_uses": max_uses, "expires_at": expires, "is_active": 1,
+               "created_at": to_iso(now), "updated_at": to_iso(now)}
+        db.insert(conn, "promo_codes", row)
+    return db.get_promo_code(conn, row["id"])
+
+
+def set_promo_code_active(conn, admin, code_id, active: bool, now: datetime) -> dict:
+    """Organizer: switch a code off or on. Codes are never deleted, so bookings keep their history."""
+    require_role(conn, admin)
+    with db.transaction(conn):
+        code = db.get_promo_code(conn, code_id) if isinstance(code_id, str) else None
+        if code is None or code["event_id"] != current_event(conn)["id"]:
+            raise TubaraoError("PROMO_CODE_NOT_FOUND")
+        db.update(conn, "promo_codes", code["id"], {"is_active": int(bool(active)), "updated_at": to_iso(now)})
+    return db.get_promo_code(conn, code_id)
+
+
+def promo_codes(conn, admin, now: datetime) -> list[dict]:
+    """Organizer: every code of the active event, with the uses taken right now."""
+    require_role(conn, admin)
+    event = current_event(conn)
+    return [{**code, "uses": promo_uses(conn, event, code["id"], now)}
+            for code in db.promo_codes_for_event(conn, event["id"])]
 
 
 def _owned(conn, reservation_id, email) -> dict:
