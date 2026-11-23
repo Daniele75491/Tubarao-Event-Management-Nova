@@ -318,3 +318,24 @@ def app_copy(status: str) -> str:
     sys.path.insert(0, str(ROOT))
     import app
     return app.BOOKING_COPY[status][1]
+
+
+def test_landing_page_explains_how_to_book(demo_db):
+    at = open_screen("tickets")
+    no_errors(at)
+    assert any("How to book" in i.value for i in at.info)
+
+
+def test_friendly_messages_for_bad_details_and_status_legend(demo_db):
+    at = open_screen("tickets")
+    at.checkbox[0].check().run()
+    [b for b in at.button if b.label == "GET TICKET →"][0].click().run()
+    at.checkbox[0].check()
+    button(at, "RESERVE MY SPOT").click().run()
+    assert any("first name, last name and a valid email" in e.value for e in at.error)
+    at.text_input[0].input("Ux")
+    at.text_input[1].input("Tester")
+    at.text_input[2].input("ux2@example.test")
+    button(at, "RESERVE MY SPOT").click().run()
+    assert any("Reservation created" in s.value for s in at.success)
+    assert any("What do the booking statuses mean?" in e.label for e in at.expander)

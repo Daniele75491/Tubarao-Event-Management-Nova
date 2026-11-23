@@ -307,6 +307,9 @@ def landing_screen(state: dict) -> None:
             st.rerun()
 
     st.divider()
+    st.info("**How to book (university demo):** 1) Confirm the Instagram step. 2) Press GET TICKET on the "
+            "category you want. 3) Fill in your details and press RESERVE MY SPOT. 4) On your booking page press "
+            "SIMULATE & CLAIM before the timer ends. No real payment is made at any point.")
     st.markdown("<div class='eyebrow'>Step 01 · Before tickets</div><h2>Follow Tubarão.</h2>", unsafe_allow_html=True)
     st.write(f"Follow **{logic.INSTAGRAM_HANDLE}** on Instagram before buying. "
              "*Classroom demo: no link opens and nothing is checked.*")
@@ -346,8 +349,8 @@ def landing_screen(state: dict) -> None:
 
     with st.expander("Already reserved? Find your booking"):
         with st.form("find_booking"):
-            reference = st.text_input("Booking reference")
-            email = st.text_input("Email")
+            reference = st.text_input("Booking reference (shown on your booking page)")
+            email = st.text_input("Email used for the booking")
             if st.form_submit_button("FIND MY BOOKING"):
                 try:
                     logic.reservation_state(conn(), reference, email, now())
@@ -377,12 +380,12 @@ def checkout_screen(state: dict, category: str) -> None:
                "payment on the next page. No real payment is needed (university demo). "
                "The final price is the one locked into your reservation when you press RESERVE MY SPOT.")
     with st.form("checkout"):
-        first_name = st.text_input("First name", max_chars=100)
-        last_name = st.text_input("Last name", max_chars=100)
-        email = st.text_input("Email", max_chars=254, placeholder="you@example.test")
+        first_name = st.text_input("First name (as on your ID)", max_chars=100)
+        last_name = st.text_input("Last name (as on your ID)", max_chars=100)
+        email = st.text_input("Email (you will need it to reopen your booking)", max_chars=254, placeholder="you@example.test")
         st.warning("Please select the correct ticket category. Tickets purchased under the wrong category may be "
                    "cancelled and refunded.")
-        right_category = st.checkbox(f"I confirm my ticket category is {category}.")
+        right_category = st.checkbox(f"I confirm that I want a {category} ticket.")
         st.caption("Tickets are individual and non-transferable.")
         st.markdown("By continuing, you acknowledge that you have read our "
                     "<a href='privacy' target='_blank'>Privacy Notice</a>.", unsafe_allow_html=True)
@@ -399,6 +402,9 @@ def checkout_screen(state: dict, category: str) -> None:
             st.session_state.pop("checkout_category", None)
             if result.get("resumed"):
                 flash("info", "Welcome back — you already have a booking with this email, so we reopened it instead of creating a new one.")
+            else:
+                flash("success", "Reservation created. Your place is held for a limited time. Next step: press "
+                                 "SIMULATE & CLAIM below before the timer ends (demo, no real payment).")
             st.rerun()
 
 
@@ -469,6 +475,12 @@ def booking_panel(minutes: int) -> None:
             forget_booking()
             st.rerun(scope="app")
 
+    with st.expander("What do the booking statuses mean?"):
+        st.markdown("- **Reserved**: your place is held for a limited time. Claim the demo payment before the timer ends.\n"
+                    "- **Payment claimed**: you claimed the demo payment. The admin is checking it.\n"
+                    "- **Confirmed / paid**: the admin confirmed it. Your demo ticket is valid.\n"
+                    "- **Expired**: the time ran out and the place was released.\n"
+                    "- **Rejected**: the admin did not accept the claim. No ticket was issued.")
     st.caption("Booking reference. This page's link reopens your booking; keep the reference with your email "
                "as a backup:")
     st.code(view["reservation_id"], language=None)
@@ -526,6 +538,8 @@ def result_banner(result: dict) -> None:
     if kind == "CHECKED_IN":
         body, css = f"<p>{name}</p><p><b>{result['category']}</b></p><p>Welcome in. Admit this guest.</p>", "ok"
         title = "CHECKED IN"
+        if result.get("non_paying"):
+            body += "<p>Non-paying guest (resident or invited). No payment was needed.</p>"
     elif kind == "ALREADY_CHECKED_IN":
         body = (f"<p>{name}</p><p><b>{result['category']}</b></p>"
                 f"<p>Already admitted at {logic.lisbon(result['checked_in_at'], '%H:%M')}. Do not admit a second time.</p>")
@@ -559,6 +573,8 @@ def scanner(identity: dict) -> None:
             st.rerun()
         return
 
+    st.info("How to check in: scan the guest's QR with the camera, upload a photo of it, or paste the ticket code. "
+            "Green = admit. Yellow = already admitted, do not admit again. Red = do not admit.")
     photo = st.camera_input("Scan: point the camera at the guest's ticket QR", key=f"camera_{round_number}")
     upload = st.file_uploader("…or upload a photo or screenshot of the QR", type=["png", "jpg", "jpeg"], key=f"upload_{round_number}")
     with st.form(f"paste_{round_number}", border=False):
@@ -615,6 +631,8 @@ def manual_search(identity: dict) -> None:
                 action, target = logic.check_in_manual, person["reservation_id"]
             if right.button("CHECK IN", key=f"in_{target}", type="primary", width="stretch"):
                 st.session_state.manual_result = run_check_in(action, identity, target)
+                if person["type"] == "NON-PAYING" and st.session_state.manual_result:
+                    st.session_state.manual_result["non_paying"] = True  # banner text only
                 st.rerun()
     if found["more"]:
         st.caption("More matches exist. Type more of the name to narrow the list.")
