@@ -5,6 +5,7 @@ These use Streamlit's built-in AppTest, so no browser is needed.
 
 import os
 from pathlib import Path
+from datetime import timedelta
 
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -432,3 +433,26 @@ def test_friendly_messages_for_bad_details_and_status_legend(demo_db):
     button(at, "RESERVE MY SPOT").click().run()
     assert any("Reservation created" in s.value for s in at.success)
     assert any("What do the booking statuses mean?" in e.label for e in at.expander)
+
+
+
+def test_checkout_rejects_event_changed_in_another_session(demo_db):
+    at = open_screen("tickets")
+    at.checkbox[0].check().run()
+    [b for b in at.button if b.label == "GET TICKET →"][0].click().run()
+    old_event = logic.current_event(demo_db)
+    organizer = next(a for a in db.active_accounts(demo_db) if a["role"] == "SUPER_ADMIN")
+    identity = {"account_id": organizer["id"], "role": "SUPER_ADMIN"}
+    event = logic.create_event(demo_db, identity, {
+        "name": "Other Event", "starts_at": logic.utcnow() + timedelta(days=5),
+        "physical_capacity": 30, "men_paid_cap": 12, "sales_mode": "OPEN",
+    }, logic.utcnow())
+    logic.activate_event(demo_db, identity, event["id"], logic.utcnow())
+    at.text_input[0].input("Alex")
+    at.text_input[1].input("Stale")
+    at.text_input[2].input("stale@example.test")
+    at.checkbox[0].check()
+    button(at, "RESERVE MY SPOT").click().run()
+    assert any("active event changed" in e.value.lower() for e in at.error)
+    assert not any(r["email"] == "stale@example.test" for r in db.reservations_for_event(demo_db, event["id"]))
+    assert old_event["id"] != event["id"]

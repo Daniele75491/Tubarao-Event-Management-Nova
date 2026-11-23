@@ -355,6 +355,7 @@ def landing_screen(state: dict) -> None:
             if st.button("GET TICKET →", key=f"get_{category}", type="primary", width="stretch",
                          disabled=not followed or status == "SOLD_OUT"):
                 st.session_state.checkout_category = category
+                st.session_state.checkout_event_id = state["event_id"]
                 st.rerun()
 
     if pricing["phase"] == "EARLY":
@@ -413,7 +414,8 @@ def checkout_screen(state: dict, category: str) -> None:
                 st.error("Confirm your ticket category to continue: tick the box above the RESERVE MY SPOT button.")
                 return
             try:
-                result = logic.reserve(conn(), first_name, last_name, email, category, now(), promo_code=promo_code)
+                result = logic.reserve(conn(), first_name, last_name, email, category, now(), promo_code=promo_code,
+                                       expected_event_id=st.session_state.get("checkout_event_id", ""))
             except TubaraoError as error:
                 st.error(error.message)
                 return
@@ -1332,15 +1334,22 @@ def downloads(identity: dict, event: dict) -> None:
     def backup_csv():
         separate = db.connect()
         try:
-            return logic.event_backup_csv(separate, identity, now())[1]
+            with db.transaction(separate):
+                listed_event = db.get_event(separate, event["id"])
+                if not listed_event or logic.backup_filename(listed_event) != logic.backup_filename(event):
+                    raise TubaraoError("EVENT_CHANGED")
+                return logic.event_backup_csv(separate, identity, now(), event_id=event["id"])[1]
         finally:
             separate.close()
 
     def guest_pdf():
         separate = db.connect()
         try:
-            listed_event, guests = logic.guest_list(separate, identity)
-            return guest_list_pdf.render(listed_event, guests)
+            with db.transaction(separate):
+                listed_event, guests = logic.guest_list(separate, identity, event_id=event["id"])
+                if guest_list_pdf.filename(listed_event) != guest_list_pdf.filename(event):
+                    raise TubaraoError("EVENT_CHANGED")
+                return guest_list_pdf.render(listed_event, guests)
         finally:
             separate.close()
 

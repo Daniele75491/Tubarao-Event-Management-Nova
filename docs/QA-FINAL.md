@@ -1,3 +1,5 @@
+> **Update:** QA-BUG-1 was fixed after this historical report. Claims for inactive events are now rejected. The test results and bug description below record the earlier review.
+
 # QA report · Python + Streamlit version
 
 23 November 2026 · Simone, QA and demo validation · branch `simo-qa-demo`

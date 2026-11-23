@@ -1,3 +1,5 @@
+> **Update:** This report records an earlier release. QA-BUG-1 was subsequently fixed and claims for inactive events are now rejected.
+
 # Tubarão Nova final release report
 
 **Recommendation — READY WITH LIMITATIONS.** The tested release ran locally and completed the classroom demo from booking to check-in. The team can present the single-event demo using synthetic data. The live demo was also verified in a fresh browser without Streamlit sign-in.

@@ -11,6 +11,7 @@ from datetime import timedelta
 import pytest
 
 import db
+import guest_list_pdf
 import logic
 import tickets
 from conftest import NOW, SECRET
@@ -117,8 +118,6 @@ def test_claiming_a_paid_booking_changes_nothing(conn, paid):
     assert row["status"] == "PAID" and row["ticket_issued_at"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason="QA-BUG-1 in docs/QA-FINAL.md: a booking of an event that is no longer "
-                                        "active can still be claimed, but the organizer can never confirm it.")
 def test_a_booking_of_an_event_that_is_no_longer_active_cannot_be_claimed(conn, make_event, book):
     old = book()
     make_event(name="Next Party")  # the organizer activates a different event
@@ -306,7 +305,8 @@ def test_the_backup_csv_contains_no_secrets_ids_or_staff_data(conn, organizer, d
     assert all(len(row) == len(logic.BACKUP_COLUMNS) for row in rows)
 
 
-def test_downloading_exports_never_changes_the_database(conn, organizer, door, event, book, paid):
+def test_downloading_exports_never_changes_the_database(conn, organizer, door, event, book, paid, monkeypatch):
+    monkeypatch.setattr(logic, "utcnow", lambda: NOW)
     paid()
     book()
     logic.add_non_paying(conn, organizer, event["id"], "Rui", "Resident", "MEN", None, NOW)
@@ -333,3 +333,20 @@ def test_the_guest_list_has_only_people_allowed_in_and_no_contact_details(conn, 
     _event, guests = logic.guest_list(conn, organizer)
     assert sorted(g["first_name"] for g in guests) == ["Paid", "Rui"]
     assert all(set(g) == {"first_name", "last_name"} for g in guests)
+
+
+
+def test_exports_remain_bound_to_the_selected_event(conn, organizer, make_event, book, paid):
+    first = make_event(name="First Party")
+    paid(first="Alice", last="First")
+    other = make_event(name="Second Party")
+    paid(first="Bob", last="Second")
+    name, content = logic.event_backup_csv(conn, organizer, NOW, event_id=first["id"])
+    event, guests = logic.guest_list(conn, organizer, event_id=first["id"])
+    assert "First_Party" in name
+    assert b"Alice" in content and b"Bob" not in content
+    assert event["id"] == first["id"] and event["id"] != other["id"]
+    assert any(g["first_name"] == "Alice" for g in guests)
+    assert not any(g["first_name"] == "Bob" for g in guests)
+    assert "First_Party" in guest_list_pdf.filename(event)
+    assert guest_list_pdf.render(event, guests).startswith(b"%PDF")
