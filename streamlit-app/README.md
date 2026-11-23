@@ -21,7 +21,26 @@ To run the automated checks:
 uv run pytest
 ```
 
-To start again from a clean demo at any time, run `uv run python seed.py` again.
+To start again from a clean demo at any time, run `uv run python seed.py` again. It asks before replacing your existing data (add `--yes` to skip the question). Stop the app first: on Windows the database file can't be replaced while the app is using it, and `seed.py` will tell you so instead of breaking anything.
+
+### On Windows
+
+Use **PowerShell**.
+
+1. Install `uv` once, then close and reopen PowerShell:
+   ```
+   winget install --id=astral-sh.uv -e
+   ```
+2. Go into this folder and run the commands above:
+   ```
+   cd ~/Documents/Tubarao-Event-Management-Nova/streamlit-app
+   uv run python seed.py
+   uv run streamlit run app.py
+   ```
+   You can also run the tests from the project folder with `uv run --directory streamlit-app pytest -q`.
+3. The **first** run takes a minute or two while `uv` downloads Python and the packages, and Windows Defender scans them. Later runs are fast. The screen tests allow each screen up to 2 minutes, so a slow first run doesn't fail.
+4. Git may print `LF will be replaced by CRLF` warnings when you `git add`. They are harmless: Git is just converting line endings between Windows and Mac/Linux.
+5. Use `cd ~/Documents/...`, not `cd "%USERPROFILE%\Documents"`. The `%...%` form only works in the old Command Prompt, not in PowerShell.
 
 ## Follow one ticket from booking to the door
 
@@ -38,11 +57,12 @@ The guest's screen updates by itself when the organizer decides, without reloadi
 | `app.py` | **The screens.** One function per screen: `page_tickets`, `page_door`, `page_organizer`, `page_privacy`. Screens show things and collect clicks; they never decide rules. |
 | `logic.py` | **The rules.** Prices, capacity, the MEN cap, holds and deadlines, who may confirm a payment, single-use check-in, corrections, sign-in. Every action the screens offer is a function here. |
 | `db.py` | **The storage.** Creates the tables in one SQLite file (`data/tubarao.db`) and reads/saves rows. It also adds new columns to an older database file automatically, so you never need to delete your data when a feature is added. |
-| `tickets.py` | **The QR code.** Makes the secret ticket token, draws the QR image and reads QR photos. |
+| `tickets.py` | **The QR code.** Makes the secret ticket token, draws the QR image and reads QR photos (with two OpenCV readers, because one alone misses a few codes). |
+| `selection.py` | Remembers which row of an organizer table is selected by its booking ID, never by row position. |
 | `guest_list_pdf.py` | Draws the printable guest list. |
 | `seed.py` | Resets the database with demo data and the first two access codes. After that, manage staff accounts from the dashboard's STAFF ACCESS section. |
 | `specs/` | One short spec (Why / What / Out of scope / Done when) per feature added after the port. |
-| `tests/` | About 250 automated checks: one file per area, plus `test_app.py`, which opens the screens and presses buttons. |
+| `tests/` | About 310 automated checks: one file per area, plus `test_app.py`, which opens the screens and presses buttons. |
 | `AGENTS.md` | The rulebook for AI coding agents working in this folder. |
 
 A button press travels like this: **`app.py` → a function in `logic.py` → `db.py`**. For example, **CONFIRM PAID** calls `logic.confirm_payment()`. That function checks that you are the organizer and that the booking was claimed in time. It then saves `PAID` through `db.py` and calls `logic.issue_ticket()`, which uses `tickets.py`.
@@ -107,6 +127,7 @@ Refunds, editable FEW TICKETS LEFT thresholds and editing the Instagram handle a
 - **Charts on the organizer dashboard** (tickets sold per day, arrivals per 15 minutes, revenue by price tier): `specs/dashboard-charts.md`
 - **Promo codes** (percent off at checkout, with optional use limit and expiry): `specs/promo-codes.md`
 - **Staff management** (add, deactivate and reset staff access codes from the dashboard, without `seed.py`): `specs/staff-management.md`
+- **Fixes from the PR #1 review** (expiry saved, safe setup and reset, sessions rechecked, ID-based selection, reliable QR scanning, Windows setup): `specs/review-fixes.md`
 
 ## Settings
 
