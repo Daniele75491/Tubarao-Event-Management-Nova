@@ -384,7 +384,8 @@ def reservation_view(row: dict, event: dict, now: datetime) -> dict:
 
 # ================================================================ guest actions
 
-def reserve(conn, first_name, last_name, email, category, now: datetime, promo_code: str | None = None) -> dict:
+def reserve(conn, first_name, last_name, email, category, now: datetime, promo_code: str | None = None,
+            expected_event_id: str | None = None) -> dict:
     """Hold a place for a guest, or resume the booking they already have.
 
     Entering the same name, email and category again returns the existing
@@ -398,6 +399,8 @@ def reserve(conn, first_name, last_name, email, category, now: datetime, promo_c
 
     with db.transaction(conn):
         event = current_event(conn)
+        if expected_event_id is not None and event["id"] != expected_event_id:
+            raise TubaraoError("EVENT_CHANGED")
 
         # 1. Resume an existing live booking for this email (works even when sales are closed).
         for row in db.reservations_for_event(conn, event["id"]):
@@ -573,6 +576,8 @@ def claim_payment(conn, reservation_id, email, now: datetime) -> dict:
     with db.transaction(conn):
         row = _owned(conn, reservation_id, email)
         event = db.get_event(conn, row["event_id"])
+        if not event or not event["is_active"]:
+            raise TubaraoError("EVENT_CHANGED")
         if row["status"] == "PAYMENT_CLAIMED":  # pressing twice is harmless
             return reservation_view(row, event, now)
         if row["status"] != "RESERVED":
@@ -1379,11 +1384,13 @@ def _safe_filename(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", plain).strip("_")[:70] or "Event"
 
 
-def event_backup_csv(conn, admin, now: datetime | None = None) -> tuple[str, bytes]:
+def event_backup_csv(conn, admin, now: datetime | None = None, event_id: str | None = None) -> tuple[str, bytes]:
     """Emergency door list. Reading it never changes attendance (it only saves EXPIRED on
     bookings whose time ran out, so the file is accurate). No IDs, QR data or access codes."""
     require_role(conn, admin)
-    event = current_event(conn)
+    event = db.get_event(conn, event_id) if event_id is not None else current_event(conn)
+    if event is None:
+        raise TubaraoError("EVENT_NOT_FOUND")
     refresh_expiry(conn, event, now or utcnow())
     buffer = io.StringIO()
     writer = csv.writer(buffer, quoting=csv.QUOTE_ALL, lineterminator="\r\n")
@@ -1403,10 +1410,12 @@ def backup_filename(event: dict) -> str:
     return f"Tubarao_{_safe_filename(event['name'])}{date}_backup.csv"
 
 
-def guest_list(conn, admin) -> tuple[dict, list[dict]]:
+def guest_list(conn, admin, event_id: str | None = None) -> tuple[dict, list[dict]]:
     """PAID guests and non-paying guests, sorted by last name then first name."""
     require_role(conn, admin)
-    event = current_event(conn)
+    event = db.get_event(conn, event_id) if event_id is not None else current_event(conn)
+    if event is None:
+        raise TubaraoError("EVENT_NOT_FOUND")
     guests = [{"first_name": r["first_name"], "last_name": r["last_name"]}
               for r in db.reservations_for_event(conn, event["id"]) if r["status"] == "PAID"]
     guests += [{"first_name": r["first_name"], "last_name": r["last_name"]} for r in db.non_paying_for_event(conn, event["id"])]

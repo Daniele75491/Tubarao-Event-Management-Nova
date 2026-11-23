@@ -61,7 +61,7 @@ SQLite keeps bookings and check-ins in a single file. The hosted demo may lose t
 
 ## Known demo limits
 
-Keep one event active during the presentation. A claim for a booking from an inactive event can get stuck in review. A late claim is refused, although the saved booking status may update only when it is read again. If the camera is unavailable, upload the QR image or use name search.
+A late claim is refused, although the saved booking status may update only when it is read again. If the camera is unavailable, upload the QR image or use name search.
 
 ## Where to start
 

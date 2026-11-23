@@ -23,6 +23,13 @@ from qa_support import DOOR_CODE, ORGANIZER_CODE, create_demo_file, identity, op
 GUEST = {"first": "Alex", "last": "Demo", "email": "alex.demo@example.test"}
 
 
+@pytest.fixture(autouse=True)
+def workflow_clock(monkeypatch):
+    """Keep session validation on the same clock as the workflow."""
+    monkeypatch.setattr(logic, "utcnow", lambda: NOW)
+
+
+
 @pytest.fixture
 def demo_file(tmp_path):
     path = tmp_path / "qa-demo.db"
