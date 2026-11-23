@@ -48,6 +48,9 @@ FEW_MEN = 7
 
 MAX_PRICE_CENTS = 100_000  # €1,000.00
 SESSION_HOURS = 12
+MIN_CODE_LENGTH = 10
+LOGIN_FAILURE_LIMIT = 5            # wrong codes allowed from one source...
+LOGIN_FAILURE_WINDOW = timedelta(minutes=15)  # ...within this time; then that source waits this long
 INSTAGRAM_HANDLE = "@casitatubarao"
 
 
@@ -95,6 +98,7 @@ MESSAGES = {
                           "and at least 1 use if you set a limit.",
     "PROMO_CODE_EXISTS": "This event already has that code.",
     "CODE_IN_USE": "Choose a different access code.",
+    "TOO_MANY_ATTEMPTS": "Too many wrong codes. Wait 15 minutes and try again.",
     "STAFF_NOT_FOUND": "Staff account not found. Refresh the dashboard.",
     "CANNOT_CHANGE_SELF": "You can't deactivate your own account.",
 }
@@ -599,8 +603,8 @@ def create_access_account(conn, label: str, role: str, code: str) -> str:
     if role not in ROLES:
         raise TubaraoError("INVALID_INPUT", "Role must be ADMIN or SUPER_ADMIN.")
     code = (code or "").strip()
-    if len(code) < 8:
-        raise TubaraoError("INVALID_INPUT", "Access codes need at least 8 characters.")
+    if len(code) < MIN_CODE_LENGTH:
+        raise TubaraoError("INVALID_INPUT", f"Access codes need at least {MIN_CODE_LENGTH} characters.")
     label = clean_name(label)
     with db.transaction(conn):
         if _code_taken(conn, code):
@@ -628,8 +632,8 @@ def _code_taken(conn, code: str, except_id: str | None = None) -> bool:
 
 def _clean_code(code) -> str:
     code = code.strip() if isinstance(code, str) else ""
-    if not 8 <= len(code) <= 512:
-        raise TubaraoError("INVALID_INPUT", "Access codes need at least 8 characters.")
+    if not MIN_CODE_LENGTH <= len(code) <= 512:
+        raise TubaraoError("INVALID_INPUT", f"Access codes need at least {MIN_CODE_LENGTH} characters.")
     return code
 
 
@@ -693,12 +697,47 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def login(conn, code, now: datetime) -> tuple[str, dict]:
+def _source_hash(source) -> str:
+    return hashlib.sha256(f"tubarao-login-source:{source or 'unknown'}".encode("utf-8")).hexdigest()
+
+
+def _locked(conn, source_hash: str, now: datetime) -> bool:
+    """Locked = 5 wrong codes within 15 minutes, and less than 15 minutes since the 5th of them."""
+    since = to_iso(now - 2 * LOGIN_FAILURE_WINDOW)
+    times = [parse_time(row["failed_at"]) for row in db.fetch_all(
+        conn, "SELECT failed_at FROM login_failures WHERE source_hash = ? AND failed_at > ? ORDER BY failed_at",
+        (source_hash, since))]
+    n = LOGIN_FAILURE_LIMIT
+    return any(times[i + n - 1] - times[i] <= LOGIN_FAILURE_WINDOW and now - times[i + n - 1] < LOGIN_FAILURE_WINDOW
+               for i in range(len(times) - n + 1))
+
+
+def login(conn, code, now: datetime, source: str | None = None) -> tuple[str, dict]:
     """Check an access code and start a 12-hour session.
 
     Returns (session_token, identity). The token is kept by the browser
     session; the database stores only its hash.
+
+    `source` is who is trying (the screen passes the visitor's IP address, or its
+    browser session). After 5 wrong codes from one source within 15 minutes, that
+    source is refused, even with the right code, until 15 minutes after its 5th
+    failure. Other sources are unaffected, so nobody can lock real staff out.
     """
+    source_hash = _source_hash(source)
+    with db.transaction(conn):
+        if _locked(conn, source_hash, now):
+            raise TubaraoError("TOO_MANY_ATTEMPTS")
+    try:
+        return _check_code(conn, code, now, source_hash)
+    except TubaraoError as error:
+        if error.code == "INVALID_ACCESS_CODE":
+            with db.transaction(conn):
+                db.insert(conn, "login_failures", {"source_hash": source_hash, "failed_at": to_iso(now)})
+                conn.execute("DELETE FROM login_failures WHERE failed_at < ?", (to_iso(now - timedelta(days=1)),))
+        raise
+
+
+def _check_code(conn, code, now: datetime, source_hash: str) -> tuple[str, dict]:
     if not isinstance(code, str) or not code.strip() or len(code) > 512:
         raise TubaraoError("INVALID_ACCESS_CODE")
     code = code.strip()
@@ -716,6 +755,7 @@ def login(conn, code, now: datetime) -> tuple[str, dict]:
             "created_at": to_iso(now), "last_seen_at": to_iso(now),
             "expires_at": to_iso(now + timedelta(hours=SESSION_HOURS)),
         })
+        conn.execute("DELETE FROM login_failures WHERE source_hash = ?", (source_hash,))  # success clears the count
     return token, {"account_id": account["id"], "label": account["label"], "role": account["role"]}
 
 

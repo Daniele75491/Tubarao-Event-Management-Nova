@@ -386,3 +386,14 @@ def test_live_attendance_stops_after_the_session_ends(demo_db):
     no_errors(at)
     assert not any(m.label == "TOTAL INSIDE" for m in at.metric)
     assert any(field.label == "Access code" for field in at.text_input)
+
+
+# ------------------------------------------------------------------ security hardening
+
+def test_the_sign_in_form_stops_after_five_wrong_codes(demo_db):
+    at = open_screen("organizer")
+    for _ in range(5):
+        at = sign_in(at, "not-the-right-code")
+    at = sign_in(at, ORGANIZER_CODE)  # even the right code is refused now
+    assert any("Too many wrong codes" in e.value for e in at.error)
+    assert not at.metric
