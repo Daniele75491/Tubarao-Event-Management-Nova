@@ -48,10 +48,10 @@ Open [the local app](http://localhost:8501). The seed command creates fictional 
 The tests check the booking rules, staff permissions, and check-in workflow. Run this from `streamlit-app/`:
 
 ```powershell
-uv run --locked --python 3.12 python -m pytest -q -r a
+uv run --locked --python 3.12 python -X utf8 -m pytest -q -r a
 ```
 
-`--locked` uses the dependency versions recorded in the repository. See the [QA notes](docs/QA-FINAL.md) and [release report](docs/FINAL-RELEASE-REPORT.md) for coverage and verified results.
+`--locked` uses the dependency versions recorded in the repository. The UTF-8 option lets Windows read the accented characters in the app source during testing. See the [QA notes](docs/QA-FINAL.md) and [release report](docs/FINAL-RELEASE-REPORT.md) for coverage and verified results.
 
 ## How the demo stores data
 
