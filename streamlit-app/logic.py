@@ -242,12 +242,39 @@ def occupancy(conn, event: dict, now: datetime, exclude_id: str | None = None,
     }
 
 
+def expiry_moment(row: dict, event: dict) -> str | None:
+    """When a hold or claim ran out: the hold deadline, or the end of the claim's review window."""
+    if row["status"] == "PAYMENT_CLAIMED":
+        deadline = claim_deadline(row, event)
+        return to_iso(deadline) if deadline else row["reserved_until"]
+    return row["reserved_until"]
+
+
+def _mark_expired(conn, row: dict, event: dict, now: datetime) -> None:
+    db.update(conn, "reservations", row["id"],
+              {"status": "EXPIRED", "expired_at": expiry_moment(row, event), "updated_at": to_iso(now)})
+
+
+def _elapsed(conn, event: dict, now: datetime) -> list[dict]:
+    return [row for row in db.reservations_for_event(conn, event["id"])
+            if row["status"] in ("RESERVED", "PAYMENT_CLAIMED") and effective_status(row, event, now) == "EXPIRED"]
+
+
 def expire_elapsed(conn, event: dict, now: datetime) -> None:
-    """Save EXPIRED on holds whose time has run out (inside a transaction)."""
-    for row in db.reservations_for_event(conn, event["id"]):
-        if row["status"] in ("RESERVED", "PAYMENT_CLAIMED") and effective_status(row, event, now) == "EXPIRED":
-            db.update(conn, "reservations", row["id"],
-                      {"status": "EXPIRED", "expired_at": to_iso(now), "updated_at": to_iso(now)})
+    """Save EXPIRED on holds and claims whose time has run out (call inside a transaction)."""
+    for row in _elapsed(conn, event, now):
+        _mark_expired(conn, row, event, now)
+
+
+def refresh_expiry(conn, event: dict, now: datetime) -> None:
+    """Before reading an event's bookings, save any that have run out as EXPIRED.
+
+    The quick check runs without locking; the database write lock is only taken
+    when something actually needs saving, so busy screens don't queue up.
+    """
+    if _elapsed(conn, event, now):
+        with db.transaction(conn):
+            expire_elapsed(conn, event, now)
 
 
 def sales_open(event: dict, now: datetime) -> bool:
@@ -291,6 +318,7 @@ def event_pricing(event: dict, now: datetime) -> dict:
 def public_state(conn, now: datetime) -> dict:
     """Everything the public page may show. Words only: never exact counts."""
     event = current_event(conn)
+    refresh_expiry(conn, event, now)
     used = occupancy(conn, event, now)
     remaining = event["physical_capacity"] - used["total"]
     men_remaining = event["men_paid_cap"] - used["men"]
@@ -410,7 +438,18 @@ def _owned(conn, reservation_id, email) -> dict:
 def reservation_state(conn, reservation_id, email, now: datetime) -> dict:
     """Read-only: let a guest see the current status of their booking."""
     row = _owned(conn, reservation_id, email)
+    return _fresh_view(conn, row, now)
+
+
+def _fresh_view(conn, row: dict, now: datetime) -> dict:
+    """The guest's view of one booking, after saving EXPIRED if its time has run out."""
     event = db.get_event(conn, row["event_id"])
+    if row["status"] in ("RESERVED", "PAYMENT_CLAIMED") and effective_status(row, event, now) == "EXPIRED":
+        with db.transaction(conn):
+            current = db.get_reservation(conn, row["id"])
+            if current["status"] == row["status"]:  # nobody changed it in the meantime
+                _mark_expired(conn, current, event, now)
+        row = db.get_reservation(conn, row["id"])
     return reservation_view(row, event, now)
 
 
@@ -426,7 +465,7 @@ def booking_by_reference(conn, reference, now: datetime) -> dict:
     row = db.get_reservation(conn, reference.strip().lower())
     if row is None:
         raise TubaraoError("RESERVATION_NOT_FOUND")
-    return reservation_view(row, db.get_event(conn, row["event_id"]), now)
+    return _fresh_view(conn, row, now)
 
 
 def claim_payment(conn, reservation_id, email, now: datetime) -> dict:
@@ -444,8 +483,7 @@ def claim_payment(conn, reservation_id, email, now: datetime) -> dict:
         if row["status"] != "RESERVED":
             raise TubaraoError("INVALID_RESERVATION_STATUS")
         if effective_status(row, event, now) == "EXPIRED":
-            db.update(conn, "reservations", row["id"],
-                      {"status": "EXPIRED", "expired_at": to_iso(now), "updated_at": to_iso(now)})
+            _mark_expired(conn, row, event, now)
             raise TubaraoError("INVALID_RESERVATION_STATUS")
         db.update(conn, "reservations", row["id"],
                   {"status": "PAYMENT_CLAIMED", "claimed_at": to_iso(now), "updated_at": to_iso(now)})
@@ -526,7 +564,7 @@ def session_identity(conn, token: str | None, now: datetime) -> dict | None:
     if last_seen is None or last_seen < now - timedelta(minutes=15):
         with db.transaction(conn):
             db.update(conn, "admin_sessions", session["id"], {"last_seen_at": to_iso(now)})
-    return {"account_id": account["id"], "label": account["label"], "role": account["role"]}
+    return {"account_id": account["id"], "label": account["label"], "role": account["role"], "session_token": token}
 
 
 def logout(conn, token: str | None, now: datetime) -> None:
@@ -540,15 +578,29 @@ def logout(conn, token: str | None, now: datetime) -> None:
 
 def require_role(conn, admin: dict | None, roles=("SUPER_ADMIN",)) -> dict:
     """Check the staff member against the database every time, never trusting the screen.
-    SUPER_ADMIN = organizer (everything). ADMIN = door staff (check-in only)."""
+    SUPER_ADMIN = organizer (everything). ADMIN = door staff (check-in only).
+
+    The screens always pass the identity with its session token, and the session is checked
+    here on every action: it must exist, not be revoked or expired, and belong to this account.
+    So a popup or a live panel left open after LOG OUT (or after the session ends) can't act.
+    (Identities without a token are only made inside the code: seed.py and the tests.)
+    """
     if not admin or "account_id" not in admin:
         raise TubaraoError("UNAUTHORIZED")
+    if "session_token" in admin:
+        session = db.session_by_token_hash(conn, _token_hash(str(admin["session_token"])))
+        if (session is None or session["revoked_at"] or session["account_id"] != admin["account_id"]
+                or not parse_time(session["expires_at"]) > utcnow()):
+            raise TubaraoError("UNAUTHORIZED")
     account = db.get_account(conn, admin["account_id"])
     if account is None or not account["is_active"]:
         raise TubaraoError("UNAUTHORIZED")
     if account["role"] not in roles:
         raise TubaraoError("FORBIDDEN")
-    return {"account_id": account["id"], "label": account["label"], "role": account["role"]}
+    identity = {"account_id": account["id"], "label": account["label"], "role": account["role"]}
+    if "session_token" in admin:
+        identity["session_token"] = admin["session_token"]
+    return identity
 
 
 def _current_event_row(conn, reservation_id: str) -> tuple[dict, dict]:
@@ -578,8 +630,7 @@ def confirm_payment(conn, admin, reservation_id, now: datetime, secret: str) -> 
         elif row["status"] != "PAYMENT_CLAIMED":
             raise TubaraoError("PAYMENT_NOT_CLAIMED")
         elif effective_status(row, event, now) == "EXPIRED":
-            db.update(conn, "reservations", row["id"],
-                      {"status": "EXPIRED", "expired_at": to_iso(now), "updated_at": to_iso(now)})
+            _mark_expired(conn, row, event, now)
             return {"reservation_id": row["id"], "status": "EXPIRED"}
         else:
             _mark_paid(conn, row, admin, now)
@@ -998,6 +1049,7 @@ def search_attendees(conn, admin, query: str, now: datetime, limit: int = 30) ->
     if not isinstance(query, str) or len(query) > 100 or _CONTROL.search(query):
         raise TubaraoError("INVALID_INPUT", "Use up to 100 characters to search.")
     event = current_event(conn)
+    refresh_expiry(conn, event, now)
     needle = query.strip().lower()
     if not needle:
         return {"attendees": [], "more": False}
@@ -1122,6 +1174,7 @@ def dashboard(conn, admin, now: datetime) -> dict:
     except TubaraoError:
         return {"admin": admin, "event": None, "reservations": [], "non_paying": [], "kpis": kpis([], []),
                 "charts": None, "capacity": None}
+    refresh_expiry(conn, event, now)
     reservations = []
     for row in db.reservations_for_event(conn, event["id"]):
         reservations.append({**row, "status": effective_status(row, event, now),
@@ -1157,11 +1210,12 @@ def _safe_filename(text: str) -> str:
     return re.sub(r"[^A-Za-z0-9]+", "_", plain).strip("_")[:70] or "Event"
 
 
-def event_backup_csv(conn, admin) -> tuple[str, bytes]:
-    """Emergency door list. Reading it never changes attendance.
-    No IDs, QR data or access codes are included."""
+def event_backup_csv(conn, admin, now: datetime | None = None) -> tuple[str, bytes]:
+    """Emergency door list. Reading it never changes attendance (it only saves EXPIRED on
+    bookings whose time ran out, so the file is accurate). No IDs, QR data or access codes."""
     require_role(conn, admin)
     event = current_event(conn)
+    refresh_expiry(conn, event, now or utcnow())
     buffer = io.StringIO()
     writer = csv.writer(buffer, quoting=csv.QUOTE_ALL, lineterminator="\r\n")
     writer.writerow(BACKUP_COLUMNS)

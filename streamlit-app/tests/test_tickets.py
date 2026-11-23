@@ -63,3 +63,47 @@ def test_an_image_without_a_qr_returns_nothing():
     Image.new("RGB", (200, 200), "white").save(buffer, format="PNG")
     assert tickets.decode_qr_image(buffer.getvalue()) is None
     assert tickets.decode_qr_image(b"not an image") is None
+
+
+# ------------------------------------------------------------------ fix 5: every ticket QR scans
+
+def _many_tokens(count=500):
+    import random
+    rng = random.Random(20261123)  # fixed, so the same 500 codes are checked every time
+    return [tickets.derive_ticket_token(str(uuid.UUID(int=rng.getrandbits(128))),
+                                        str(uuid.UUID(int=rng.getrandbits(128))), SECRET) for _ in range(count)]
+
+
+def _png(image) -> bytes:
+    import io
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _variants(png: bytes):
+    """The ways a QR reaches the scanner: as issued, smaller, slightly turned, slightly blurred photo."""
+    import io
+
+    from PIL import Image, ImageFilter
+    original = Image.open(io.BytesIO(png)).convert("RGB")
+    half = original.resize((original.width // 2, original.height // 2))
+    turned = original.rotate(7, expand=True, fillcolor="white")
+    blurred = original.filter(ImageFilter.GaussianBlur(1.5))
+    return {"as issued": png, "half size": _png(half), "turned": _png(turned), "blurred": _png(blurred)}
+
+
+def test_every_generated_ticket_qr_scans_in_every_form():
+    failures = {}
+    for token in _many_tokens():
+        for form, image in _variants(tickets.qr_png(token)).items():
+            if tickets.decode_qr_image(image) != "TUBARAO:" + token:
+                failures.setdefault(form, 0)
+                failures[form] += 1
+    assert failures == {}
+
+
+def test_the_qr_image_for_a_ticket_never_changes():
+    # Re-issuing must give exactly the same image, including for tickets issued before this fix.
+    token = _many_tokens(1)[0]
+    assert tickets.qr_png(token) == tickets.qr_png(token)
