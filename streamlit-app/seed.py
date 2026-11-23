@@ -41,12 +41,17 @@ class SetupError(Exception):
     """Setup refused to start (bad codes, or the database already has data). Nothing was written."""
 
 
+def generate_codes() -> tuple[str, str]:
+    """Random codes for when none are given: 16 random hexadecimal characters each (64 bits)."""
+    return "org-" + secrets.token_hex(8), "door-" + secrets.token_hex(8)
+
+
 def check_codes(organizer_code, door_code) -> tuple[str, str]:
-    """Both staff codes must have at least 8 characters and be different from each other."""
+    """Both staff codes must have at least 10 characters and be different from each other."""
     organizer = organizer_code.strip() if isinstance(organizer_code, str) else ""
     door = door_code.strip() if isinstance(door_code, str) else ""
-    if len(organizer) < 8 or len(door) < 8:
-        raise SetupError("Both access codes need at least 8 characters.")
+    if len(organizer) < logic.MIN_CODE_LENGTH or len(door) < logic.MIN_CODE_LENGTH:
+        raise SetupError(f"Both access codes need at least {logic.MIN_CODE_LENGTH} characters.")
     if organizer == door:
         raise SetupError("The organizer and door codes must be different.")
     return organizer, door
@@ -153,8 +158,9 @@ def _remove(path) -> None:
 def main(argv: list[str] | None = None) -> None:
     argv = sys.argv[1:] if argv is None else argv
     path = db.db_path()
-    organizer_code = os.environ.get("TUBARAO_ORGANIZER_CODE") or "org-" + secrets.token_hex(4)
-    door_code = os.environ.get("TUBARAO_DOOR_CODE") or "door-" + secrets.token_hex(4)
+    generated_organizer, generated_door = generate_codes()
+    organizer_code = os.environ.get("TUBARAO_ORGANIZER_CODE") or generated_organizer
+    door_code = os.environ.get("TUBARAO_DOOR_CODE") or generated_door
 
     # 1. Check the codes before touching anything.
     try:

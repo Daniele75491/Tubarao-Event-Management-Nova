@@ -15,7 +15,6 @@ who may do what) is checked in logic.py, which saves through db.py.
 
 from __future__ import annotations
 
-import html
 import os
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -25,6 +24,7 @@ import pandas as pd
 import streamlit as st
 
 import db
+import display
 import guest_list_pdf
 import logic
 import seed
@@ -81,7 +81,13 @@ def now() -> datetime:
 
 
 def esc(text) -> str:
-    return html.escape(str(text))
+    """Typed text inside HTML: shown as plain text, never as markup or Markdown (see display.py)."""
+    return display.esc(text)
+
+
+def md(text) -> str:
+    """Typed text inside Markdown, messages and button labels: shown as plain text (see display.py)."""
+    return display.md(text)
 
 
 def flash(kind: str, text: str) -> None:
@@ -190,6 +196,21 @@ h1, h2, h3, .display { font-family: Impact, "Arial Narrow", sans-serif !importan
 
 # ==================================================================== staff sign-in
 
+def sign_in_source() -> str:
+    """Who is trying to sign in, for the 5-wrong-codes limit in logic.login: the visitor's IP
+    address when Streamlit knows it, otherwise this browser session."""
+    try:
+        ip = st.context.ip_address
+    except Exception:
+        ip = None
+    if isinstance(ip, str) and ip:  # None on localhost; a stand-in object in AppTest
+        return f"ip:{ip}"
+    if "browser_id" not in st.session_state:
+        import secrets
+        st.session_state.browser_id = secrets.token_hex(8)
+    return f"session:{st.session_state.browser_id}"
+
+
 def staff_identity() -> dict | None:
     """Return the signed-in staff member, or show the ADMIN ACCESS form."""
     c = conn()
@@ -207,7 +228,7 @@ def staff_identity() -> dict | None:
         code = st.text_input("Access code", type="password")
         if st.form_submit_button("ENTER", type="primary", width="stretch"):
             try:
-                token, _identity = logic.login(c, code, now())
+                token, _identity = logic.login(c, code, now(), source=sign_in_source())
             except TubaraoError as error:
                 st.error(error.message)
             else:
@@ -922,7 +943,7 @@ def reservation_actions(identity: dict, r: dict) -> None:
                 buttons[0].success("TICKET ISSUED")
                 try:
                     png = logic.ticket_qr(c, identity, r["id"], secret)
-                    buttons[1].download_button("DOWNLOAD DEMO QR", png, file_name=f"tubarao-ticket-{r['last_name']}.png",
+                    buttons[1].download_button("DOWNLOAD DEMO QR", png, file_name=f"tubarao-ticket-{logic._safe_filename(r['last_name'])}.png",
                                                mime="image/png", key="qr_download", on_click="ignore")
                 except TubaraoError as error:
                     if session_ended(error):
@@ -963,7 +984,7 @@ def confirm(action, identity, reservation_id, secret) -> None:
 
 @st.dialog("Adjust expected amount")
 def adjust_amount_dialog(identity: dict, r: dict) -> None:
-    st.write(f"**{r['first_name']} {r['last_name']}** · current amount **{logic.money(r['amount_cents'])}**")
+    st.write(f"**{md(r['first_name'])} {md(r['last_name'])}** · current amount **{logic.money(r['amount_cents'])}**")
     st.warning("This only changes the internal expected/revenue amount. No Revolut transfer, charge or refund happens.")
     text = st.text_input("New amount in euros", value=f"{r['amount_cents'] / 100:.2f}")
     left, right = st.columns(2)
@@ -980,7 +1001,7 @@ def adjust_amount_dialog(identity: dict, r: dict) -> None:
 
 @st.dialog("Delete record")
 def delete_record_dialog(identity: dict, r: dict) -> None:
-    st.write(f"**{r['first_name']} {r['last_name']}** · {r['email']} · {r['status']}")
+    st.write(f"**{md(r['first_name'])} {md(r['last_name'])}** · {md(r['email'])} · {r['status']}")
     if r["status"] == "RESERVED":
         st.warning("This reservation is still holding a place. Deleting it releases the spot.")
     st.error("Deletion is permanent.")
@@ -1086,10 +1107,10 @@ def other_events(identity: dict, event: dict | None) -> None:
                                        for e in inactive]), hide_index=True, width="stretch")
             names = {f"{e['name']} · {logic.lisbon(e['starts_at'])}": e for e in inactive}
             picked = names[st.selectbox("Event to activate", list(names))]
-            sure = st.checkbox(f"Make “{picked['name']}” the active event. Finish the current door session first.",
+            sure = st.checkbox(f"Make “{md(picked['name'])}” the active event. Finish the current door session first.",
                                key="activate_sure")
             if st.button("SET AS ACTIVE EVENT", disabled=not sure):
-                act(logic.activate_event, conn(), identity, picked["id"], now(), success=f"{picked['name']} is now active.")
+                act(logic.activate_event, conn(), identity, picked["id"], now(), success=f"{md(picked['name'])} is now active.")
         st.markdown("**CREATE NEW EVENT** — it starts inactive, so guests see nothing until you activate it.")
         values = event_form(None, f"new_{st.session_state.get('new_event_round', 0)}")
         if st.button("CREATE EVENT", type="primary"):
@@ -1159,13 +1180,13 @@ def staff_access_panel(identity: dict) -> None:
         if chosen:
             left, right = st.columns(2)
             if chosen["is_active"] and chosen["id"] != identity["account_id"]:
-                if left.button(f"DEACTIVATE {chosen['label']}", key="staff_off"):
+                if left.button(f"DEACTIVATE {md(chosen['label'])}", key="staff_off"):
                     act(logic.set_staff_active, conn(), identity, chosen["id"], False, now(),
-                        success=f"{chosen['label']} is deactivated and signed out.")
+                        success=f"{md(chosen['label'])} is deactivated and signed out.")
             elif not chosen["is_active"]:
-                if left.button(f"ACTIVATE {chosen['label']}", key="staff_on"):
+                if left.button(f"ACTIVATE {md(chosen['label'])}", key="staff_on"):
                     act(logic.set_staff_active, conn(), identity, chosen["id"], True, now(),
-                        success=f"{chosen['label']} can sign in again with their old code.")
+                        success=f"{md(chosen['label'])} can sign in again with their old code.")
             if right.button("RESET CODE", key="staff_reset"):
                 reset_code_dialog(identity, chosen)
 
@@ -1188,7 +1209,7 @@ def staff_access_panel(identity: dict) -> None:
                 st.error(error.message)  # keep what was typed so it can be fixed
                 return
             st.session_state.staff_round = st.session_state.get("staff_round", 0) + 1
-            flash("success", f"{label.strip()} added. Give them their code yourself.")
+            flash("success", f"{md(label.strip())} added. Give them their code yourself.")
             reset_tables()
             st.rerun()
 
@@ -1196,7 +1217,7 @@ def staff_access_panel(identity: dict) -> None:
 @st.dialog("Reset access code")
 def reset_code_dialog(identity: dict, account: dict) -> None:
     yourself = account["id"] == identity["account_id"]
-    st.write(f"New code for **{account['label']}** ({ROLE_NAMES.get(account['role'], account['role'])}).")
+    st.write(f"New code for **{md(account['label'])}** ({ROLE_NAMES.get(account['role'], account['role'])}).")
     st.warning("The old code stops working now and this account is signed out everywhere."
                + (" That includes you: sign in again with the new code." if yourself else ""))
     code = st.text_input("New access code", type="password", help="At least 8 characters.")
@@ -1213,7 +1234,7 @@ def reset_code_dialog(identity: dict, account: dict) -> None:
         except TubaraoError as error:
             st.error(error.message)
             return
-        flash("success", f"New code saved for {account['label']}.")
+        flash("success", f"New code saved for {md(account['label'])}.")
         reset_tables()
         st.rerun()
 
@@ -1254,7 +1275,7 @@ def paying_attendees(identity: dict, data: dict) -> None:
     }, "paying_table")
     if chosen:
         with st.container(border=True):
-            st.write(f"**{chosen['first_name']} {chosen['last_name']}** · {chosen['category']} · "
+            st.write(f"**{md(chosen['first_name'])} {md(chosen['last_name'])}** · {chosen['category']} · "
                      f"{logic.money(chosen['amount_cents'])}")
             a, b = st.columns(2)
             if not chosen["checked_in_at"]:
@@ -1268,7 +1289,7 @@ def paying_attendees(identity: dict, data: dict) -> None:
 
 @st.dialog("Change ticket category")
 def change_category_dialog(identity: dict, r: dict) -> None:
-    st.write(f"**{r['first_name']} {r['last_name']}** is currently **{r['category']}**.")
+    st.write(f"**{md(r['first_name'])} {md(r['last_name'])}** is currently **{r['category']}**.")
     st.caption("The price, payment and QR stay the same. No email is sent.")
     new = st.radio("Category", ["WOMEN", "MEN"], index=["WOMEN", "MEN"].index(r["category"]), horizontal=True)
     left, right = st.columns(2)
@@ -1280,7 +1301,7 @@ def change_category_dialog(identity: dict, r: dict) -> None:
 
 @st.dialog("Delete paid ticket")
 def delete_paid_dialog(identity: dict, r: dict) -> None:
-    st.write(f"**{r['first_name']} {r['last_name']}** · {r['email']} · {r['category']} · "
+    st.write(f"**{md(r['first_name'])} {md(r['last_name'])}** · {md(r['email'])} · {r['category']} · "
              f"expected {logic.money(r['amount_cents'])}")
     st.error("This permanently deletes the ticket. Its QR stops working and the place is released. "
              "Use it only for an accidentally confirmed duplicate. No email is sent.")
@@ -1300,7 +1321,7 @@ def non_paying_attendees(identity: dict, data: dict) -> None:
             "Category": lambda r: r["category"],
             "Checked in": lambda r: logic.lisbon(r["checked_in_at"], "%H:%M") if r["checked_in_at"] else "—",
         }, "non_paying_table")
-        if chosen and st.button(f"REMOVE {chosen['first_name']} {chosen['last_name']}"):
+        if chosen and st.button(f"REMOVE {md(chosen['first_name'])} {md(chosen['last_name'])}"):
             remove_non_paying_dialog(identity, event["id"], chosen)
         with st.form("add_non_paying", clear_on_submit=True):
             a, b, c, d = st.columns(4)
@@ -1315,7 +1336,7 @@ def non_paying_attendees(identity: dict, data: dict) -> None:
 
 @st.dialog("Remove non-paying attendee")
 def remove_non_paying_dialog(identity: dict, event_id: str, person: dict) -> None:
-    st.write(f"Remove **{person['first_name']} {person['last_name']}**? Their place is released.")
+    st.write(f"Remove **{md(person['first_name'])} {md(person['last_name'])}**? Their place is released.")
     left, right = st.columns(2)
     if left.button("CANCEL", width="stretch"):
         st.rerun()

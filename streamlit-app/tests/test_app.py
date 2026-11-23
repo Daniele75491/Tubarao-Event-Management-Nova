@@ -456,3 +456,14 @@ def test_checkout_rejects_event_changed_in_another_session(demo_db):
     assert any("active event changed" in e.value.lower() for e in at.error)
     assert not any(r["email"] == "stale@example.test" for r in db.reservations_for_event(demo_db, event["id"]))
     assert old_event["id"] != event["id"]
+
+
+# ------------------------------------------------------------------ security hardening
+
+def test_the_sign_in_form_stops_after_five_wrong_codes(demo_db):
+    at = open_screen("organizer")
+    for _ in range(5):
+        at = sign_in(at, "not-the-right-code")
+    at = sign_in(at, ORGANIZER_CODE)  # even the right code is refused now
+    assert any("Too many wrong codes" in e.value for e in at.error)
+    assert not at.metric
