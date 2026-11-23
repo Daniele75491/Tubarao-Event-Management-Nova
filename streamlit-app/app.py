@@ -142,6 +142,13 @@ def style() -> None:
     """Tubarão brand: black, bone white and Atlantic blue, with tall uppercase headings."""
     st.markdown("""
 <style>
+.booking-guide { background:#1d293d; color:#b5cff7; border-radius:12px; padding:16px 20px; font-size:14px; line-height:1.45; }
+.booking-guide-title { color:#dce9ff; font-size:15px; font-weight:600; }
+.booking-guide-subtitle { color:#a1b9de; font-size:12px; margin-top:2px; }
+.booking-guide ol { margin:10px 0; padding-left:22px; }
+.booking-guide li { padding-left:3px; margin:3px 0; }
+.booking-guide li::marker { color:#829ecb; }
+.booking-guide-note { color:#a1b9de; font-size:12px; }
 :root { --bone:#F3F0E8; --blue:#1F5CFF; --muted:rgba(243,240,232,.58); --line:rgba(243,240,232,.16); }
 h1, h2, h3, .display { font-family: Impact, "Arial Narrow", sans-serif !important; text-transform: uppercase;
   letter-spacing: .02em; font-weight: 400 !important; }
@@ -307,9 +314,19 @@ def landing_screen(state: dict) -> None:
             st.rerun()
 
     st.divider()
-    st.info("**How to book (university demo):** 1) Confirm the Instagram step. 2) Press GET TICKET on the "
-            "category you want. 3) Fill in your details and press RESERVE MY SPOT. 4) On your booking page press "
-            "SIMULATE & CLAIM before the timer ends. No real payment is made at any point.")
+    st.markdown("""
+        <div class="booking-guide">
+          <div class="booking-guide-title">How to book</div>
+          <div class="booking-guide-subtitle">University demo</div>
+          <ol>
+            <li>Confirm the Instagram step.</li>
+            <li>Select your category and click GET TICKET.</li>
+            <li>Enter your details and click RESERVE MY SPOT.</li>
+            <li>On your booking page, click SIMULATE &amp; CLAIM before the reservation timer expires.</li>
+          </ol>
+          <div class="booking-guide-note">No real payment is made at any point.</div>
+        </div>
+    """, unsafe_allow_html=True)
     st.markdown("<div class='eyebrow'>Step 01 · Before tickets</div><h2>Follow Tubarão.</h2>", unsafe_allow_html=True)
     st.write(f"Follow **{logic.INSTAGRAM_HANDLE}** on Instagram before buying. "
              "*Classroom demo: no link opens and nothing is checked.*")

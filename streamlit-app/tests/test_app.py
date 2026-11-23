@@ -323,7 +323,7 @@ def app_copy(status: str) -> str:
 def test_landing_page_explains_how_to_book(demo_db):
     at = open_screen("tickets")
     no_errors(at)
-    assert any("How to book" in i.value for i in at.info)
+    assert any("How to book" in item.value for item in at.markdown)
 
 
 def test_friendly_messages_for_bad_details_and_status_legend(demo_db):
