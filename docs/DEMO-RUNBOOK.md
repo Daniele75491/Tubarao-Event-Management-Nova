@@ -40,16 +40,16 @@ The course requires the demo to run **live at the deployed URL**; slides or vide
 | --- | --- | --- | --- |
 | 1 | Guest | Open **Tickets**. | Hero video, **TUBARÃO CLASSROOM DEMO**, date, EARLY €8 with a countdown, WOMEN and MEN shown as AVAILABLE (never exact numbers). |
 | 2 | Guest | Tick **I follow @casitatubarao**. | The tickets unlock. Say: "There is only one live event; the organizer chooses which one." |
-| 3 | Guest | On **WOMEN TICKET**, press **GET TICKET →**. Enter `Alex`, `Walkthrough`, `alex.walkthrough@example.test`. Tick **I confirm my ticket category is WOMEN.** Press **RESERVE MY SPOT**. | **YOUR SPOT IS RESERVED**, WOMEN · €8, a countdown from 20:00, and `?booking=…` in the address. |
+| 3 | Guest | On **WOMEN TICKET**, press **GET TICKET →**. Enter `Alex`, `Walkthrough`, `alex.walkthrough@example.test`. Tick **I confirm that I want a WOMEN ticket.** Press **RESERVE MY SPOT**. | **YOUR SPOT IS RESERVED**, WOMEN · €8, the “What's next?” prompt to simulate payment, a countdown from 20:00, and `?booking=…` in the address. |
 | 4 | Guest | Press **SIMULATE €8 & CLAIM**. | **DEMO PAYMENT CLAIMED** – awaiting admin review. Say: "No money moves; this is only a claim, not a ticket." |
 | 5 | Organizer | Sidebar → **Organizer**. Enter the organizer code and press **ENTER**. | **TUBARÃO · ADMIN**, the KPI cards and PAYMENT VERIFICATION. Write down PAID ATTENDEES and REVENUE. |
 | 6 | Organizer | In **TO REVIEW**, tick Alex's row, then press **CONFIRM PAID**. | Alex leaves TO REVIEW. **COMPLETED / TICKETS ISSUED** goes up by one. |
 | 7 | Organizer | Open **COMPLETED / TICKETS ISSUED**, tick Alex's row, then press **DOWNLOAD DEMO QR** (it may be shown as "DOWNLOAD …"). | **TICKET ISSUED**. A `tubarao-ticket-Walkthrough.png` file downloads. Say: "The QR holds only a random code; the database stores only its fingerprint." |
 | 8 | Door | Sidebar → **Door check-in**, or press **CHECK-IN** on the organizer screen. | **TUBARÃO · CHECK-IN**, with SCAN QR and FIND BY NAME tabs. |
-| 9 | Door | Scan the QR with the camera, **or** upload the PNG under "…or upload a QR image". | **CHECKED IN · Alex Walkthrough · WOMEN**. LIVE ATTENDANCE goes up by one. |
+| 9 | Door | Scan the QR with the camera, **or** upload the PNG under "…or upload a photo or screenshot of the QR". | **CHECKED IN · Alex Walkthrough · WOMEN**. LIVE ATTENDANCE goes up by one. |
 | 10 | Door | Press **SCAN NEXT** and use the same QR again. | **ALREADY CHECKED IN** with the time of the first check-in. Nobody gets in twice. |
 | 11 | Door | **FIND BY NAME** → type `Rui`. **Rui Resident · MEN · NON-PAYING** appears. Press **CHECK IN**. | **CHECKED IN · Rui Resident**. The row now shows "CHECKED IN hh:mm" and no button. Total inside +1, MEN +1. |
-| 12 | Organizer | Sidebar → **Organizer** (still signed in), then **REFRESH**. | PAID ATTENDEES +1, REVENUE +€8.00, MEN CAP card "N paid checked in" +1. |
+| 12 | Organizer | Sidebar → **Organizer** (still signed in), then **REFRESH**. | PAID ATTENDEES +1, REVENUE +€8.00, Live attendance includes Alex and Rui. Admitting Rui adds no revenue. |
 | 13 | Organizer | Scroll to **DOWNLOADS** and press **DOWNLOAD GUEST LIST (PDF)**, and optionally **DOWNLOAD EVENT BACKUP (CSV)**. | The PDF lists PAID + non-paying guests, sorted by last name, with no emails. The CSV has one row per booking (filter Status = `PAID` for valid tickets). |
 
 Good extra moments if you have time:
@@ -60,7 +60,7 @@ Good extra moments if you have time:
 
 | Problem | Do this |
 | --- | --- |
-| **The camera does not work** (no permission, laptop, projector) | Use **…or upload a QR image** with the downloaded PNG. Or open the QR on a phone and photograph it with the laptop camera. Or use **FIND BY NAME** → `Walkthrough` → **CHECK IN**, which follows the same single-use rule. |
+| **The camera does not work** (no permission, laptop, projector) | Use **…or upload a photo or screenshot of the QR** with the downloaded PNG. Or open the QR on a phone and photograph it with the laptop camera. Or use **FIND BY NAME** → `Walkthrough` → **CHECK IN**, which follows the same single-use rule. |
 | Upload is not possible either | Use **…or paste the ticket code**. The code is the text inside the QR, `TUBARAO:` followed by 43 characters; any QR reader app on a phone can show it. |
 | The live reservation fails or the 20 minutes ran out | Use the backups: confirm **Diogo** or **Eva** (already claimed) in step 6. Or download the QR of **Bruno** or **Carla** (already paid) in step 7. |
 | "Enter your access code" appears again | You reloaded or typed an address. Sign in again and move with the **sidebar**. |
