@@ -20,6 +20,7 @@ import os
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -400,6 +401,7 @@ def checkout_screen(state: dict, category: str) -> None:
         first_name = st.text_input("First name", max_chars=100)
         last_name = st.text_input("Last name", max_chars=100)
         email = st.text_input("Email (you will need it to reopen your booking)", max_chars=254, placeholder="you@example.test")
+        promo_code = st.text_input("Promo code (optional)", max_chars=20)
         st.warning("Please select the correct ticket category. Tickets purchased under the wrong category may be "
                    "cancelled and refunded.")
         right_category = st.checkbox(f"I confirm that I want a {category} ticket.")
@@ -411,14 +413,15 @@ def checkout_screen(state: dict, category: str) -> None:
                 st.error("Confirm your ticket category to continue: tick the box above the RESERVE MY SPOT button.")
                 return
             try:
-                result = logic.reserve(conn(), first_name, last_name, email, category, now())
+                result = logic.reserve(conn(), first_name, last_name, email, category, now(), promo_code=promo_code)
             except TubaraoError as error:
                 st.error(error.message)
                 return
             remember_booking(result["reservation_id"], email)
             st.session_state.pop("checkout_category", None)
             if result.get("resumed"):
-                flash("info", "Welcome back — you already have a booking with this email, so we reopened it instead of creating a new one.")
+                note = " It keeps its original price, so the promo code was not applied." if promo_code.strip() else ""
+                flash("info", "Welcome back — you already have a booking with this email, so we reopened it instead of creating a new one." + note)
             else:
                 flash("success", "Reservation created. Your place is held for a limited time. Next step: press "
                                  "SIMULATE & CLAIM below before the timer ends (demo, no real payment).")
@@ -482,8 +485,10 @@ def booking_panel(minutes: int) -> None:
     heading, text = BOOKING_COPY.get(status, ("ORDER UNAVAILABLE", "Please try again."))
     st.markdown(f"<h1 class='center'>{heading}</h1>", unsafe_allow_html=True)
     st.markdown(f"<p class='center'>{esc(text.format(minutes=minutes))}</p>", unsafe_allow_html=True)
-    st.markdown(f"<p class='center eyebrow'>{view['category']} · {logic.public_price(view['amount_cents'])}</p>",
-                unsafe_allow_html=True)
+    price = logic.public_price(view["amount_cents"])
+    if view["promo_code"]:  # e.g. NOVA20 · €8 → €6.40
+        price = f"{esc(view['promo_code'])} · {logic.public_price(view['list_price_cents'])} → {price}"
+    st.markdown(f"<p class='center eyebrow'>{view['category']} · {price}</p>", unsafe_allow_html=True)
 
     st.info(f"**What's next?** {next_step_guidance(status)}")
 
@@ -742,11 +747,14 @@ def page_organizer() -> None:
     event = data["event"]
     active_event_summary(event, data["pricing"])
     kpi_panel(data)
+    charts_panel(data["charts"])
     st.divider()
     payment_verification(identity, data)
     st.divider()
     edit_event(identity, event)
     other_events(identity, event)
+    promo_codes_panel(identity, event)
+    staff_access_panel(identity)
     st.divider()
     paying_attendees(identity, data)
     non_paying_attendees(identity, data)
@@ -778,6 +786,73 @@ def kpi_panel(data: dict) -> None:
     st.caption("Exact numbers are internal. The public page only ever shows AVAILABLE, FEW TICKETS LEFT or SOLD OUT.")
 
 
+# ---------------------------------------------------------------- charts
+
+CHART_BLUE = "#1F5CFF"  # Tubarão's Atlantic blue (checked readable on the dark background)
+
+
+def bar_chart(frame: pd.DataFrame, x: str, x_title: str, y: str, y_title: str, tooltip: list, sort=None):
+    """One bar per row, one colour, rounded tops, exact numbers on hover."""
+    return (alt.Chart(frame)
+            .mark_bar(color=CHART_BLUE, cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
+            .encode(x=alt.X(f"{x}:N", title=x_title, sort=sort, axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y(f"{y}:Q", title=y_title, axis=alt.Axis(tickMinStep=1)),
+                    tooltip=tooltip)
+            .properties(height=240))
+
+
+def charts_panel(charts: dict) -> None:
+    """CHARTS: tickets sold per day, arrivals per 15 minutes, revenue by price tier (logic.py computes them)."""
+    title, toggle = st.columns([3, 1], vertical_alignment="bottom")
+    title.markdown("<h2>Charts</h2>", unsafe_allow_html=True)
+    as_tables = toggle.toggle("Show as tables", key="charts_as_tables")
+    columns = st.columns(3)
+
+    sales = pd.DataFrame(charts["sales_by_day"])
+    with columns[0]:
+        st.markdown("**Tickets sold per day**")
+        if sales.empty:
+            st.caption("No data yet.")
+        else:
+            sales["Day"] = pd.to_datetime(sales["day"]).dt.strftime("%d %b")
+            sales["Revenue"] = sales["revenue_cents"].map(logic.money)
+            if as_tables:
+                st.dataframe(sales[["Day", "tickets", "Revenue"]].rename(columns={"tickets": "Tickets"}),
+                             hide_index=True, width="stretch")
+            else:
+                st.altair_chart(bar_chart(sales, "Day", "Day (Lisbon)", "tickets", "Tickets",
+                                          ["Day", alt.Tooltip("tickets", title="Tickets"), "Revenue"],
+                                          sort=list(sales["Day"])), width="stretch")
+
+    arrivals = pd.DataFrame(charts["arrivals"])
+    with columns[1]:
+        st.markdown("**Arrivals per 15 minutes**")
+        if arrivals.empty:
+            st.caption("No data yet.")
+        elif as_tables:
+            st.dataframe(arrivals[["slot", "arrivals"]].rename(columns={"slot": "From", "arrivals": "Arrivals"}),
+                         hide_index=True, width="stretch")
+        else:
+            st.altair_chart(bar_chart(arrivals, "slot", "Time (Lisbon)", "arrivals", "Arrivals",
+                                      [alt.Tooltip("slot", title="From"), alt.Tooltip("arrivals", title="Arrivals")],
+                                      sort=list(arrivals["slot"])), width="stretch")
+
+    tiers = pd.DataFrame(charts["revenue_by_tier"])
+    tiers["Revenue"] = tiers["revenue_cents"].map(logic.money)
+    tiers["revenue_eur"] = tiers["revenue_cents"] / 100
+    with columns[2]:
+        st.markdown("**Revenue by price tier**")
+        if tiers["tickets"].sum() == 0:
+            st.caption("No data yet.")
+        elif as_tables:
+            st.dataframe(tiers[["tier", "tickets", "Revenue"]].rename(columns={"tier": "Tier", "tickets": "Tickets"}),
+                         hide_index=True, width="stretch")
+        else:
+            st.altair_chart(bar_chart(tiers, "tier", "Price tier", "revenue_eur", "Revenue (€)",
+                                      [alt.Tooltip("tier", title="Tier"), alt.Tooltip("tickets", title="Tickets"),
+                                       "Revenue"], sort=list(tiers["tier"])), width="stretch")
+
+
 def _table(rows: list[dict], columns: dict, name: str):
     """Show rows as a table where one row can be selected. Returns the selected row or None."""
     if not rows:
@@ -804,6 +879,7 @@ def payment_verification(identity: dict, data: dict) -> None:
     columns = {
         "First name": lambda r: r["first_name"], "Last name": lambda r: r["last_name"], "Email": lambda r: r["email"],
         "Category": lambda r: r["category"], "Expected amount": lambda r: logic.money(r["amount_cents"]),
+        "Promo": lambda r: r["promo_code"] or "",
         "Status": lambda r: r["status"].replace("_", " "),
         "Reserved": lambda r: logic.lisbon(r["created_at"], "%d %b %H:%M"),
         "Claimed": lambda r: logic.lisbon(r["claimed_at"], "%d %b %H:%M"),
@@ -823,7 +899,8 @@ def reservation_actions(identity: dict, r: dict) -> None:
     c, secret = conn(), db.ticket_secret()
     with st.container(border=True):
         st.markdown(f"**{esc(r['first_name'])} {esc(r['last_name'])}** · {esc(r['email'])} · {r['category']} · "
-                    f"expected **{logic.money(r['amount_cents'])}** ({r['pricing_tier'] or 'tier unknown'}) · "
+                    f"expected **{logic.money(r['amount_cents'])}** ({r['pricing_tier'] or 'tier unknown'}"
+                    f"{', ' + esc(r['promo_code']) + ' from ' + logic.money(r['list_price_cents']) if r['promo_code'] else ''}) · "
                     f"<span class='pill'>{r['status'].replace('_', ' ')}</span>", unsafe_allow_html=True)
         buttons = st.columns(4)
         status, stored = r["status"], r["stored_status"]
@@ -1016,6 +1093,127 @@ def other_events(identity: dict, event: dict | None) -> None:
         if st.button("CREATE EVENT", type="primary"):
             st.session_state.new_event_round = st.session_state.get("new_event_round", 0) + 1
             act(logic.create_event, conn(), identity, values, now(), success="Event created (inactive).")
+
+
+# ---------------------------------------------------------------- promo codes
+
+def promo_codes_panel(identity: dict, event: dict) -> None:
+    """PROMO CODES: list the active event's codes, switch them on/off, create new ones (rules in logic.py)."""
+    codes = logic.promo_codes(conn(), identity, now())
+    # The key makes Streamlit remember whether the section is open, so it stays open after creating a code.
+    with st.expander("PROMO CODES", key="promo_section", on_change="rerun"):
+        st.caption(f"{len(codes)} code(s) for this event. Guests type a code at checkout for a percent off the current EARLY or LATE price. "
+                   "A use is taken while the booking holds a place, and freed if it expires or is rejected.")
+        chosen = _table(codes, {
+            "Code": lambda c: c["code"], "Percent off": lambda c: f"{c['percent_off']}%",
+            "Uses": lambda c: f"{c['uses']} / {c['max_uses']}" if c["max_uses"] else f"{c['uses']} (no limit)",
+            "Expires": lambda c: logic.lisbon(c["expires_at"]) if c["expires_at"] else "Never",
+            "Active": lambda c: "YES" if c["is_active"] else "NO",
+        }, "promo_table")
+        if chosen:
+            label = f"DEACTIVATE {chosen['code']}" if chosen["is_active"] else f"ACTIVATE {chosen['code']}"
+            if st.button(label, key="promo_toggle"):
+                act(logic.set_promo_code_active, conn(), identity, chosen["id"], not chosen["is_active"], now(),
+                    success=f"{chosen['code']} is now {'inactive' if chosen['is_active'] else 'active'}.")
+
+        st.markdown("**CREATE CODE**")
+        prefix = f"promo_new_{st.session_state.get('promo_round', 0)}"  # fresh inputs after each code
+        a, b, c = st.columns(3)
+        code = a.text_input("Code", key=f"{prefix}_code", max_chars=20, placeholder="NOVA20",
+                            help="3 to 20 letters, numbers or dashes. Saved in capitals.")
+        percent = b.number_input("Percent off", 1, 90, 10, key=f"{prefix}_percent")
+        uses = c.number_input("Maximum uses (0 = no limit)", 0, 100000, 0, key=f"{prefix}_uses")
+        expires = when_input("Expires", None, f"{prefix}_expires")
+        if st.button("CREATE CODE", type="primary", key=f"{prefix}_create"):
+            try:
+                created = logic.create_promo_code(conn(), identity, event["id"], code, int(percent),
+                                                  int(uses) or None, expires, now())
+            except TubaraoError as error:
+                st.error(error.message)  # keep what was typed so it can be fixed
+                return
+            st.session_state.promo_round = st.session_state.get("promo_round", 0) + 1
+            flash("success", f"Promo code {created['code']} created.")
+            reset_tables()
+            st.rerun()
+
+
+# ---------------------------------------------------------------- staff access
+
+ROLE_NAMES = {"SUPER_ADMIN": "ORGANIZER", "ADMIN": "DOOR"}
+
+
+def staff_access_panel(identity: dict) -> None:
+    """STAFF ACCESS: list staff accounts, switch them off/on, reset codes, add new ones (rules in logic.py)."""
+    accounts = logic.staff_accounts(conn(), identity)
+    with st.expander("STAFF ACCESS", key="staff_section", on_change="rerun"):
+        st.caption("Door accounts can only use check-in. Organizer accounts can do everything. "
+                   "Codes are never shown here: give each person their code yourself.")
+        chosen = _table(accounts, {
+            "Name": lambda a: a["label"] + (" (you)" if a["id"] == identity["account_id"] else ""),
+            "Role": lambda a: ROLE_NAMES.get(a["role"], a["role"]),
+            "Active": lambda a: "YES" if a["is_active"] else "NO",
+            "Last sign-in": lambda a: logic.lisbon(a["last_login_at"]) if a["last_login_at"] else "Never",
+        }, "staff_table")
+        if chosen:
+            left, right = st.columns(2)
+            if chosen["is_active"] and chosen["id"] != identity["account_id"]:
+                if left.button(f"DEACTIVATE {chosen['label']}", key="staff_off"):
+                    act(logic.set_staff_active, conn(), identity, chosen["id"], False, now(),
+                        success=f"{chosen['label']} is deactivated and signed out.")
+            elif not chosen["is_active"]:
+                if left.button(f"ACTIVATE {chosen['label']}", key="staff_on"):
+                    act(logic.set_staff_active, conn(), identity, chosen["id"], True, now(),
+                        success=f"{chosen['label']} can sign in again with their old code.")
+            if right.button("RESET CODE", key="staff_reset"):
+                reset_code_dialog(identity, chosen)
+
+        st.markdown("**ADD ACCOUNT**")
+        prefix = f"staff_new_{st.session_state.get('staff_round', 0)}"  # fresh inputs after each account
+        a, b = st.columns(2)
+        label = a.text_input("Name", key=f"{prefix}_name", max_chars=100, placeholder="Door phone 2")
+        role = b.radio("Role", ["ADMIN", "SUPER_ADMIN"], key=f"{prefix}_role", horizontal=True,
+                       format_func=lambda r: "Door staff" if r == "ADMIN" else "Organizer")
+        a, b = st.columns(2)
+        code = a.text_input("New access code", key=f"{prefix}_code", type="password", help="At least 8 characters.")
+        repeat = b.text_input("Repeat the code", key=f"{prefix}_repeat", type="password")
+        if st.button("ADD ACCOUNT", type="primary", key=f"{prefix}_add"):
+            if code != repeat:
+                st.error("The two codes don't match.")
+                return
+            try:
+                logic.add_staff_account(conn(), identity, label, role, code, now())
+            except TubaraoError as error:
+                st.error(error.message)  # keep what was typed so it can be fixed
+                return
+            st.session_state.staff_round = st.session_state.get("staff_round", 0) + 1
+            flash("success", f"{label.strip()} added. Give them their code yourself.")
+            reset_tables()
+            st.rerun()
+
+
+@st.dialog("Reset access code")
+def reset_code_dialog(identity: dict, account: dict) -> None:
+    yourself = account["id"] == identity["account_id"]
+    st.write(f"New code for **{account['label']}** ({ROLE_NAMES.get(account['role'], account['role'])}).")
+    st.warning("The old code stops working now and this account is signed out everywhere."
+               + (" That includes you: sign in again with the new code." if yourself else ""))
+    code = st.text_input("New access code", type="password", help="At least 8 characters.")
+    repeat = st.text_input("Repeat the code", type="password")
+    left, right = st.columns(2)
+    if left.button("CANCEL", width="stretch"):
+        st.rerun()
+    if right.button("SAVE CODE", type="primary", width="stretch"):
+        if code != repeat:
+            st.error("The two codes don't match.")
+            return
+        try:
+            logic.reset_staff_code(conn(), identity, account["id"], code, now())
+        except TubaraoError as error:
+            st.error(error.message)
+            return
+        flash("success", f"New code saved for {account['label']}.")
+        reset_tables()
+        st.rerun()
 
 
 # ---------------------------------------------------------------- attendee lists

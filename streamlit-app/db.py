@@ -15,6 +15,7 @@ non_paying_attendees            residents and invited guests (no ticket, no reve
 admin_access_accounts           staff access codes (stored only as salted hashes)
 admin_sessions                  who is signed in (stored only as hashes)
 reservation_amount_adjustments  private history of manual price corrections
+promo_codes                     discount codes the organizer creates for an event
 """
 
 from __future__ import annotations
@@ -116,6 +117,21 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
     revoked_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS promo_codes (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL REFERENCES events(id),
+    code TEXT NOT NULL,
+    percent_off INTEGER NOT NULL CHECK (percent_off BETWEEN 1 AND 90),
+    max_uses INTEGER CHECK (max_uses IS NULL OR max_uses >= 1),
+    expires_at TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- A code is unique within its event (codes are always saved in capitals).
+CREATE UNIQUE INDEX IF NOT EXISTS promo_codes_one_code_per_event ON promo_codes(event_id, code);
+
 -- Deliberately no foreign key: the history must survive deleting the reservation.
 CREATE TABLE IF NOT EXISTS reservation_amount_adjustments (
     id TEXT PRIMARY KEY,
@@ -126,6 +142,25 @@ CREATE TABLE IF NOT EXISTS reservation_amount_adjustments (
     adjusted_by_access_id TEXT NOT NULL REFERENCES admin_access_accounts(id)
 );
 """
+
+
+# Columns added after the first version. connect() adds any that an older database file is missing,
+# so nobody has to delete their data/tubarao.db when the app gets a new feature.
+ADDED_COLUMNS = {
+    "reservations": {
+        "promo_code_id": "TEXT",        # the promo code this booking used, if any
+        "promo_code": "TEXT",           # that code's text, e.g. NOVA20 (codes never change once created)
+        "list_price_cents": "INTEGER",  # the EARLY/LATE price before any promo discount
+    },
+}
+
+
+def upgrade(conn: sqlite3.Connection) -> None:
+    for table, columns in ADDED_COLUMNS.items():
+        existing = {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for name, kind in columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
 
 
 def db_path() -> Path:
@@ -145,6 +180,7 @@ def connect(path: str | Path | None = None) -> sqlite3.Connection:
     if str(path) != ":memory:":
         conn.execute("PRAGMA journal_mode = WAL")  # readers never wait for a writer
     conn.executescript(SCHEMA)
+    upgrade(conn)
     return conn
 
 
@@ -256,6 +292,18 @@ def get_account(conn, account_id: str) -> dict | None:
 
 def session_by_token_hash(conn, token_hash: str) -> dict | None:
     return fetch_one(conn, "SELECT * FROM admin_sessions WHERE session_token_hash = ?", (token_hash,))
+
+
+def promo_codes_for_event(conn, event_id: str) -> list[dict]:
+    return fetch_all(conn, "SELECT * FROM promo_codes WHERE event_id = ? ORDER BY created_at, code", (event_id,))
+
+
+def promo_code_by_code(conn, event_id: str, code: str) -> dict | None:
+    return fetch_one(conn, "SELECT * FROM promo_codes WHERE event_id = ? AND code = ?", (event_id, code))
+
+
+def get_promo_code(conn, code_id: str) -> dict | None:
+    return fetch_one(conn, "SELECT * FROM promo_codes WHERE id = ?", (code_id,))
 
 
 def amount_adjustments(conn, reservation_id: str) -> list[dict]:

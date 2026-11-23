@@ -262,6 +262,99 @@ def test_the_door_can_check_in_a_resident_by_name(demo_db):
     assert marta["checked_in_at"]
 
 
+# ------------------------------------------------------------------ dashboard charts
+
+def test_the_organizer_sees_the_three_charts(demo_db):
+    at = sign_in(open_screen("organizer"), ORGANIZER_CODE)
+    no_errors(at)
+    assert any("Charts" in m.value for m in at.markdown)
+    assert len(at.get("vega_lite_chart")) == 3
+
+
+def test_the_door_account_sees_no_charts(demo_db):
+    at = sign_in(open_screen("organizer"), DOOR_CODE)
+    assert len(at.get("vega_lite_chart")) == 0
+
+
+# ------------------------------------------------------------------ promo codes
+
+def checkout_with_code(at: AppTest, code: str, email: str = "promo@example.test") -> AppTest:
+    at.checkbox[0].check().run()
+    [b for b in at.button if b.label == "GET TICKET →"][0].click().run()
+    fields = {f.label: f for f in at.text_input}
+    fields["First name"].input("Pia")
+    fields["Last name"].input("Promo")
+    fields["Email (you will need it to reopen your booking)"].input(email)
+    fields["Promo code (optional)"].input(code)
+    at.checkbox[0].check()
+    return button(at, "RESERVE MY SPOT").click().run()
+
+
+def test_a_guest_books_with_a_promo_code_and_sees_the_discount(demo_db):
+    organizer = [a for a in db.active_accounts(demo_db) if a["role"] == "SUPER_ADMIN"][0]
+    admin = {"account_id": organizer["id"], "label": "Organizer", "role": "SUPER_ADMIN"}
+    logic.create_promo_code(demo_db, admin, logic.current_event(demo_db)["id"], "NOVA20", 20, None, None,
+                            logic.utcnow())
+    at = checkout_with_code(open_screen("tickets"), "nova20")
+    no_errors(at)
+    assert any("YOUR SPOT IS RESERVED" in m.value for m in at.markdown)
+    assert any("NOVA20" in m.value and "€6.40" in m.value for m in at.markdown)
+    assert any("What's next?" in item.value for item in at.info)
+    assert any("6.40" in b.label for b in at.button if b.label.startswith("SIMULATE"))
+
+
+
+def test_a_wrong_promo_code_shows_why_and_makes_no_booking(demo_db):
+    at = checkout_with_code(open_screen("tickets"), "NOPE")
+    assert any("This promo code doesn't exist." in e.value for e in at.error)
+    assert not any("YOUR SPOT IS RESERVED" in m.value for m in at.markdown)
+    assert demo_db.execute("SELECT COUNT(*) FROM reservations WHERE email = 'promo@example.test'").fetchone()[0] == 0
+
+
+def test_the_organizer_creates_a_promo_code_from_the_dashboard(demo_db):
+    at = sign_in(open_screen("organizer"), ORGANIZER_CODE)
+    [f for f in at.text_input if f.label == "Code"][0].input("friends10")
+    [f for f in at.number_input if f.label == "Percent off"][0].set_value(10)
+    button(at, "CREATE CODE").click().run()
+    no_errors(at)
+    admin = [a for a in db.active_accounts(demo_db) if a["role"] == "SUPER_ADMIN"][0]
+    codes = logic.promo_codes(demo_db, {"account_id": admin["id"], "role": "SUPER_ADMIN"}, logic.utcnow())
+    assert [(c["code"], c["percent_off"]) for c in codes] == [("FRIENDS10", 10)]
+
+
+def test_a_refused_promo_code_keeps_what_the_organizer_typed(demo_db):
+    at = sign_in(open_screen("organizer"), ORGANIZER_CODE)
+    [f for f in at.text_input if f.label == "Code"][0].input("no spaces")
+    button(at, "CREATE CODE").click().run()
+    assert any("3 to 20 letters" in e.value for e in at.error)
+    assert [f for f in at.text_input if f.label == "Code"][0].value == "no spaces"
+
+
+# ------------------------------------------------------------------ staff management
+
+def test_the_organizer_adds_a_door_account_that_can_sign_in(demo_db):
+    at = sign_in(open_screen("organizer"), ORGANIZER_CODE)
+    fields = {f.label: f for f in at.text_input}
+    fields["Name"].input("Door phone 2")
+    fields["New access code"].input("second-door-code")
+    fields["Repeat the code"].input("second-door-code")
+    button(at, "ADD ACCOUNT").click().run()
+    no_errors(at)
+    door = sign_in(open_screen("door"), "second-door-code")
+    no_errors(door)
+    assert any("Door phone 2" in m.value for m in door.markdown)
+
+
+def test_mismatched_codes_are_refused_on_screen(demo_db):
+    at = sign_in(open_screen("organizer"), ORGANIZER_CODE)
+    fields = {f.label: f for f in at.text_input}
+    fields["Name"].input("Door phone 2")
+    fields["New access code"].input("second-door-code")
+    fields["Repeat the code"].input("something-else-1")
+    button(at, "ADD ACCOUNT").click().run()
+    assert any("codes don't match" in e.value for e in at.error)
+
+
 def test_a_hosted_first_start_with_bad_codes_explains_why(tmp_path, monkeypatch):
     monkeypatch.setenv("TUBARAO_DB", str(tmp_path / "fresh.db"))
     monkeypatch.setenv("TUBARAO_ORGANIZER_CODE", "same-code-123")
