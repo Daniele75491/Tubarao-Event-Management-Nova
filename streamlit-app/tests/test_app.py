@@ -16,6 +16,9 @@ import seed
 ROOT = Path(__file__).resolve().parent.parent
 HARNESS = "import sys\nsys.path.insert(0, {root!r})\nimport app\n{setup}\napp.main({page!r})\n"
 ORGANIZER_CODE, DOOR_CODE = "organizer-code-1", "door-code-1234"
+# Seconds a screen may take to load. The very first one in a run loads Streamlit, pandas and
+# the QR libraries from scratch, which can take over 30 seconds on a Windows laptop.
+SCREEN_TIMEOUT = 120
 
 
 @pytest.fixture
@@ -31,7 +34,8 @@ def demo_db(tmp_path, monkeypatch):
 
 def open_screen(page: str, setup: str = "", query: dict | None = None) -> AppTest:
     """Open one screen. `setup` runs before the app starts; `query` fills the page address."""
-    at = AppTest.from_string(HARNESS.format(root=str(ROOT), page=page, setup=setup), default_timeout=30)
+    at = AppTest.from_string(HARNESS.format(root=str(ROOT), page=page, setup=setup),
+                               default_timeout=SCREEN_TIMEOUT)
     for key, value in (query or {}).items():
         at.query_params[key] = value
     return at.run()
@@ -256,3 +260,39 @@ def test_the_door_can_check_in_a_resident_by_name(demo_db):
     event = logic.current_event(demo_db)
     marta = [p for p in db.non_paying_for_event(demo_db, event["id"]) if p["first_name"] == "Marta"][0]
     assert marta["checked_in_at"]
+
+
+def test_a_hosted_first_start_with_bad_codes_explains_why(tmp_path, monkeypatch):
+    monkeypatch.setenv("TUBARAO_DB", str(tmp_path / "fresh.db"))
+    monkeypatch.setenv("TUBARAO_ORGANIZER_CODE", "same-code-123")
+    monkeypatch.setenv("TUBARAO_DOOR_CODE", "same-code-123")
+    at = open_screen("organizer", setup="app.bootstrap.clear()")
+    no_errors(at)
+    assert any("must be different" in e.value for e in at.error)
+    conn = db.connect(tmp_path / "fresh.db")
+    assert seed.is_empty(conn)
+    conn.close()
+
+
+# ------------------------------------------------------------------ sessions are rechecked (fix 3)
+
+def test_a_door_action_after_the_session_ends_signs_out_and_does_nothing(demo_db):
+    at = sign_in(open_screen("door"), DOOR_CODE)
+    [f for f in at.text_input if f.label.startswith("Search by")][0].input("Carla").run()
+    logic.logout(demo_db, at.session_state["staff_token"], logic.utcnow())  # e.g. signed out elsewhere
+    button(at, "CHECK IN").click().run()
+    no_errors(at)
+    assert any(field.label == "Access code" for field in at.text_input)
+    event = logic.current_event(demo_db)
+    carla = [r for r in db.reservations_for_event(demo_db, event["id"]) if r["first_name"] == "Carla"][0]
+    assert carla["checked_in_at"] is None
+
+
+def test_live_attendance_stops_after_the_session_ends(demo_db):
+    at = sign_in(open_screen("door"), DOOR_CODE)
+    assert any(m.label == "TOTAL INSIDE" for m in at.metric)
+    logic.logout(demo_db, at.session_state["staff_token"], logic.utcnow())
+    at.run()
+    no_errors(at)
+    assert not any(m.label == "TOTAL INSIDE" for m in at.metric)
+    assert any(field.label == "Access code" for field in at.text_input)
