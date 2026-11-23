@@ -87,6 +87,16 @@ MESSAGES = {
     "TICKET_NOT_FOUND": "Issued demo ticket not found for the active event.",
     "TICKET_HASH_MISMATCH": "Ticket signing key does not match the existing ticket. Restore the original signing secret.",
     "PAYMENT_NOT_CONFIRMED": "Only paid reservations can receive a ticket.",
+    "PROMO_CODE_NOT_FOUND": "This promo code doesn't exist.",
+    "PROMO_CODE_INACTIVE": "This promo code is no longer active.",
+    "PROMO_CODE_EXPIRED": "This promo code has expired.",
+    "PROMO_CODE_USED_UP": "This promo code has been fully used.",
+    "INVALID_PROMO_CODE": "Use 3 to 20 letters, numbers or dashes, a percent from 1 to 90, "
+                          "and at least 1 use if you set a limit.",
+    "PROMO_CODE_EXISTS": "This event already has that code.",
+    "CODE_IN_USE": "Choose a different access code.",
+    "STAFF_NOT_FOUND": "Staff account not found. Refresh the dashboard.",
+    "CANNOT_CHANGE_SELF": "You can't deactivate your own account.",
 }
 
 TICKET_FAILED = "Demo ticket could not be issued. Use RETRY TICKET."
@@ -363,6 +373,8 @@ def reservation_view(row: dict, event: dict, now: datetime) -> dict:
         "category": row["category"],
         "status": effective_status(row, event, now),
         "amount_cents": row["amount_cents"],
+        "list_price_cents": row["list_price_cents"] if row.get("list_price_cents") is not None else row["amount_cents"],
+        "promo_code": row.get("promo_code"),
         "pricing_tier": row["pricing_tier"],
         "reserved_until": row["reserved_until"],
         "claimed_at": row["claimed_at"],
@@ -372,12 +384,14 @@ def reservation_view(row: dict, event: dict, now: datetime) -> dict:
 
 # ================================================================ guest actions
 
-def reserve(conn, first_name, last_name, email, category, now: datetime) -> dict:
+def reserve(conn, first_name, last_name, email, category, now: datetime, promo_code: str | None = None) -> dict:
     """Hold a place for a guest, or resume the booking they already have.
 
     Entering the same name, email and category again returns the existing
-    live booking with its original deadline and price. A different name or
-    category for the same email is refused without saying why.
+    live booking with its original deadline and price (any promo code typed
+    then is ignored). A different name or category for the same email is
+    refused without saying why. A valid promo code lowers the price of a new
+    booking; an invalid one refuses the booking with the reason.
     """
     first_name, last_name = clean_name(first_name), clean_name(last_name)
     email, category = clean_email(email), clean_category(category)
@@ -404,10 +418,15 @@ def reserve(conn, first_name, last_name, email, category, now: datetime) -> dict
             raise TubaraoError("MEN_SOLD_OUT")
 
         pricing = event_pricing(event, now)
+        list_price = pricing["current_price_cents"]
+        code = usable_promo_code(conn, event, promo_code, now)  # None when no code was typed
         row = {
             "id": _new_id(), "event_id": event["id"],
             "first_name": first_name, "last_name": last_name, "email": email, "category": category,
-            "amount_cents": pricing["current_price_cents"], "pricing_tier": pricing["phase"],
+            "amount_cents": discounted_price(list_price, code["percent_off"]) if code else list_price,
+            "list_price_cents": list_price,
+            "promo_code_id": code["id"] if code else None, "promo_code": code["code"] if code else None,
+            "pricing_tier": pricing["phase"],
             "status": "RESERVED",
             "reserved_until": to_iso(now + timedelta(minutes=event["reservation_minutes"])),
             "created_at": to_iso(now), "updated_at": to_iso(now),
@@ -419,6 +438,82 @@ def reserve(conn, first_name, last_name, email, category, now: datetime) -> dict
                 raise TubaraoError("ACTIVE_RESERVATION_EXISTS") from error
             raise
         return {**reservation_view(db.get_reservation(conn, row["id"]), event, now), "resumed": False}
+
+
+# ================================================================ promo codes
+
+PROMO_PATTERN = re.compile(r"^[A-Z0-9-]{3,20}$")
+
+
+def discounted_price(cents: int, percent_off: int) -> int:
+    """Price after a percent discount, rounded to the nearest cent (half a cent rounds up), never below 1 cent."""
+    return max(1, (cents * (100 - percent_off) + 50) // 100)
+
+
+def promo_uses(conn, event: dict, code_id: str, now: datetime) -> int:
+    """Uses taken = bookings with this code that still hold a place (live hold, live claim or PAID)."""
+    return sum(1 for row in db.reservations_for_event(conn, event["id"])
+               if row["promo_code_id"] == code_id and occupies_place(row, event, now))
+
+
+def usable_promo_code(conn, event: dict, typed, now: datetime) -> dict | None:
+    """The promo code a guest typed, if it can be used right now. Empty means no code.
+    Otherwise it raises the reason: doesn't exist, inactive, expired or fully used."""
+    if typed is None or not str(typed).strip():
+        return None
+    code = db.promo_code_by_code(conn, event["id"], str(typed).strip().upper())
+    if code is None:
+        raise TubaraoError("PROMO_CODE_NOT_FOUND")
+    if not code["is_active"]:
+        raise TubaraoError("PROMO_CODE_INACTIVE")
+    if code["expires_at"] and now >= parse_time(code["expires_at"]):
+        raise TubaraoError("PROMO_CODE_EXPIRED")
+    if code["max_uses"] is not None and promo_uses(conn, event, code["id"], now) >= code["max_uses"]:
+        raise TubaraoError("PROMO_CODE_USED_UP")
+    return code
+
+
+def create_promo_code(conn, admin, event_id, code, percent_off, max_uses, expires_at, now: datetime) -> dict:
+    """Organizer: a new discount code for the active event. Saved in capitals, unique within the event."""
+    require_role(conn, admin)
+    text = code.strip().upper() if isinstance(code, str) else ""
+    whole = lambda value: isinstance(value, int) and not isinstance(value, bool)  # noqa: E731
+    if (not PROMO_PATTERN.match(text) or not whole(percent_off) or not 1 <= percent_off <= 90
+            or (max_uses is not None and (not whole(max_uses) or max_uses < 1))):
+        raise TubaraoError("INVALID_PROMO_CODE")
+    try:
+        expires = to_iso(expires_at)
+    except TubaraoError as error:
+        raise TubaraoError("INVALID_PROMO_CODE") from error
+    with db.transaction(conn):
+        if current_event(conn)["id"] != event_id:
+            raise TubaraoError("EVENT_CHANGED")
+        if db.promo_code_by_code(conn, event_id, text):
+            raise TubaraoError("PROMO_CODE_EXISTS")
+        row = {"id": _new_id(), "event_id": event_id, "code": text, "percent_off": percent_off,
+               "max_uses": max_uses, "expires_at": expires, "is_active": 1,
+               "created_at": to_iso(now), "updated_at": to_iso(now)}
+        db.insert(conn, "promo_codes", row)
+    return db.get_promo_code(conn, row["id"])
+
+
+def set_promo_code_active(conn, admin, code_id, active: bool, now: datetime) -> dict:
+    """Organizer: switch a code off or on. Codes are never deleted, so bookings keep their history."""
+    require_role(conn, admin)
+    with db.transaction(conn):
+        code = db.get_promo_code(conn, code_id) if isinstance(code_id, str) else None
+        if code is None or code["event_id"] != current_event(conn)["id"]:
+            raise TubaraoError("PROMO_CODE_NOT_FOUND")
+        db.update(conn, "promo_codes", code["id"], {"is_active": int(bool(active)), "updated_at": to_iso(now)})
+    return db.get_promo_code(conn, code_id)
+
+
+def promo_codes(conn, admin, now: datetime) -> list[dict]:
+    """Organizer: every code of the active event, with the uses taken right now."""
+    require_role(conn, admin)
+    event = current_event(conn)
+    return [{**code, "uses": promo_uses(conn, event, code["id"], now)}
+            for code in db.promo_codes_for_event(conn, event["id"])]
 
 
 def _owned(conn, reservation_id, email) -> dict:
@@ -508,9 +603,8 @@ def create_access_account(conn, label: str, role: str, code: str) -> str:
         raise TubaraoError("INVALID_INPUT", "Access codes need at least 8 characters.")
     label = clean_name(label)
     with db.transaction(conn):
-        for account in db.active_accounts(conn):
-            if hmac.compare_digest(hash_access_code(code, account["code_salt"]), account["code_hash"]):
-                raise TubaraoError("INVALID_INPUT", "Choose a different access code.")
+        if _code_taken(conn, code):
+            raise TubaraoError("CODE_IN_USE")
         salt = secrets.token_hex(16)
         account_id = _new_id()
         db.insert(conn, "admin_access_accounts", {
@@ -518,6 +612,81 @@ def create_access_account(conn, label: str, role: str, code: str) -> str:
             "code_salt": salt, "code_hash": hash_access_code(code, salt), "is_active": 1,
         })
     return account_id
+
+
+def _code_taken(conn, code: str, except_id: str | None = None) -> bool:
+    """Is this code already used by another account, active or not?
+
+    Sign-in finds an account by its code alone, so two active accounts must never share one.
+    Deactivated accounts count too: only a fingerprint of each code is stored, so when an
+    account is activated again we could not tell whether its old code was reused meanwhile.
+    """
+    accounts = db.fetch_all(conn, "SELECT id, code_salt, code_hash FROM admin_access_accounts")
+    return any(hmac.compare_digest(hash_access_code(code, account["code_salt"]), account["code_hash"])
+               for account in accounts if account["id"] != except_id)
+
+
+def _clean_code(code) -> str:
+    code = code.strip() if isinstance(code, str) else ""
+    if not 8 <= len(code) <= 512:
+        raise TubaraoError("INVALID_INPUT", "Access codes need at least 8 characters.")
+    return code
+
+
+def _revoke_sessions(conn, account_id: str, now: datetime) -> None:
+    conn.execute("UPDATE admin_sessions SET revoked_at = ? WHERE account_id = ? AND revoked_at IS NULL",
+                 (to_iso(now), account_id))
+
+
+def staff_accounts(conn, admin) -> list[dict]:
+    """Organizer: every staff account, without codes or their hashes."""
+    require_role(conn, admin)
+    rows = db.fetch_all(conn, "SELECT id, label, role, is_active, last_login_at FROM admin_access_accounts "
+                              "ORDER BY role DESC, label")
+    return rows
+
+
+def add_staff_account(conn, admin, label, role, code, now: datetime) -> str:
+    """Organizer: a new door (ADMIN) or organizer (SUPER_ADMIN) account. Returns its ID."""
+    require_role(conn, admin)
+    return create_access_account(conn, label, role, _clean_code(code))
+
+
+def _staff_row(conn, account_id) -> dict:
+    account = db.get_account(conn, account_id) if isinstance(account_id, str) else None
+    if account is None:
+        raise TubaraoError("STAFF_NOT_FOUND")
+    return account
+
+
+def set_staff_active(conn, admin, account_id, active: bool, now: datetime) -> dict:
+    """Organizer: switch an account off (signed out at once) or back on (with its old code)."""
+    admin = require_role(conn, admin)
+    with db.transaction(conn):
+        account = _staff_row(conn, account_id)
+        if not active:
+            if account["id"] == admin["account_id"]:
+                raise TubaraoError("CANNOT_CHANGE_SELF")
+            db.update(conn, "admin_access_accounts", account["id"], {"is_active": 0})
+            _revoke_sessions(conn, account["id"], now)
+        else:  # safe: no other account can have been given this account's code (see _code_taken)
+            db.update(conn, "admin_access_accounts", account["id"], {"is_active": 1})
+    return {"account_id": account_id, "is_active": bool(active)}
+
+
+def reset_staff_code(conn, admin, account_id, new_code, now: datetime) -> dict:
+    """Organizer: give an account a new code. The old code stops working and the account is signed out."""
+    require_role(conn, admin)
+    code = _clean_code(new_code)
+    with db.transaction(conn):
+        account = _staff_row(conn, account_id)
+        if _code_taken(conn, code, except_id=account["id"]):
+            raise TubaraoError("CODE_IN_USE")
+        salt = secrets.token_hex(16)
+        db.update(conn, "admin_access_accounts", account["id"],
+                  {"code_salt": salt, "code_hash": hash_access_code(code, salt)})
+        _revoke_sessions(conn, account["id"], now)
+    return {"account_id": account_id, "reset": True}
 
 
 def _token_hash(token: str) -> str:
@@ -1114,6 +1283,58 @@ def kpis(reservations: list[dict], non_paying: list[dict]) -> dict:
     }
 
 
+# ================================================================ dashboard charts (organizer)
+
+def sales_by_day(reservations: list[dict]) -> list[dict]:
+    """PAID tickets and their revenue per Lisbon date of confirmation, with empty days as 0."""
+    totals: dict = {}
+    for row in reservations:
+        if row["status"] == "PAID" and row["paid_at"]:
+            day = parse_time(row["paid_at"]).astimezone(LISBON).date()
+            tickets, revenue = totals.get(day, (0, 0))
+            totals[day] = (tickets + 1, revenue + row["amount_cents"])
+    if not totals:
+        return []
+    days, day = [], min(totals)
+    while day <= max(totals):
+        tickets, revenue = totals.get(day, (0, 0))
+        days.append({"day": day.isoformat(), "tickets": tickets, "revenue_cents": revenue})
+        day += timedelta(days=1)
+    return days
+
+
+def arrivals_by_quarter_hour(reservations: list[dict], non_paying: list[dict]) -> list[dict]:
+    """Check-ins (PAID tickets and non-paying guests) per 15-minute slot in Lisbon time,
+    with empty slots between the first and last arrival as 0."""
+    times = [row["checked_in_at"] for row in reservations if row["status"] == "PAID" and row["checked_in_at"]]
+    times += [row["checked_in_at"] for row in non_paying if row["checked_in_at"]]
+    counts: dict = {}
+    for value in times:
+        moment = parse_time(value).astimezone(timezone.utc)
+        slot = moment.replace(minute=moment.minute - moment.minute % 15, second=0, microsecond=0)
+        counts[slot] = counts.get(slot, 0) + 1
+    if not counts:
+        return []
+    slots, slot = [], min(counts)  # stepping in UTC keeps the order right across midnight and clock changes
+    while slot <= max(counts):
+        slots.append({"slot": slot.astimezone(LISBON).strftime("%H:%M"),
+                      "slot_start": slot.astimezone(LISBON).isoformat(), "arrivals": counts.get(slot, 0)})
+        slot += timedelta(minutes=15)
+    return slots
+
+
+def revenue_by_tier(reservations: list[dict]) -> list[dict]:
+    """PAID tickets and revenue for EARLY and LATE (always shown), plus OTHER for tickets with no tier."""
+    totals = {"EARLY": [0, 0], "LATE": [0, 0]}
+    for row in reservations:
+        if row["status"] == "PAID":
+            tier = row["pricing_tier"] if row["pricing_tier"] in ("EARLY", "LATE") else "OTHER"
+            totals.setdefault(tier, [0, 0])
+            totals[tier][0] += 1
+            totals[tier][1] += row["amount_cents"]
+    return [{"tier": tier, "tickets": tickets, "revenue_cents": revenue} for tier, (tickets, revenue) in totals.items()]
+
+
 def dashboard(conn, admin, now: datetime) -> dict:
     """Everything the organizer screen needs, read in one go."""
     admin = require_role(conn, admin)
@@ -1121,7 +1342,7 @@ def dashboard(conn, admin, now: datetime) -> dict:
         event = current_event(conn)
     except TubaraoError:
         return {"admin": admin, "event": None, "reservations": [], "non_paying": [], "kpis": kpis([], []),
-                "capacity": None}
+                "charts": None, "capacity": None}
     refresh_expiry(conn, event, now)
     reservations = []
     for row in db.reservations_for_event(conn, event["id"]):
@@ -1132,6 +1353,9 @@ def dashboard(conn, admin, now: datetime) -> dict:
     return {
         "admin": admin, "event": event, "pricing": event_pricing(event, now),
         "reservations": reservations, "non_paying": non_paying, "kpis": kpis(reservations, non_paying),
+        "charts": {"sales_by_day": sales_by_day(reservations),
+                   "arrivals": arrivals_by_quarter_hour(reservations, non_paying),
+                   "revenue_by_tier": revenue_by_tier(reservations)},
         "capacity": {**used, "physical_capacity": event["physical_capacity"], "men_paid_cap": event["men_paid_cap"],
                      "paid_capacity": event["physical_capacity"] - used["non_paying"]},
     }

@@ -8,6 +8,8 @@ The **Python and Streamlit app** in `streamlit-app/` is the university submissio
 
 Guests reserve tickets and claim simulated payments. Organizers review claims, manage events and prices, and issue QR tickets. Door staff can verify a ticket once, admit non-paying guests by name, and see who has arrived.
 
+Guests can enter a promo code at checkout. Organizers can track sales and arrivals in charts, manage discount codes, and grant or revoke staff access.
+
 Streamlit displays the screens. Python enforces the booking, capacity, pricing, and staff rules. SQLite stores events, reservations, and check-ins in one database file. The [code walkthrough](docs/CODE-WALKTHROUGH.md) shows how these parts work together.
 
 ## Project team

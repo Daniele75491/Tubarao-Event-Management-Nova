@@ -52,6 +52,8 @@ The course requires the demo to run **live at the deployed URL**; slides or vide
 | 12 | Organizer | Sidebar → **Organizer** (still signed in), then **REFRESH**. | PAID ATTENDEES +1, REVENUE +€8.00, Live attendance includes Alex and Rui. Admitting Rui adds no revenue. |
 | 13 | Organizer | Scroll to **DOWNLOADS** and press **DOWNLOAD GUEST LIST (PDF)**, and optionally **DOWNLOAD EVENT BACKUP (CSV)**. | The PDF lists PAID + non-paying guests, sorted by last name, with no emails. The CSV has one row per booking (filter Status = `PAID` for valid tickets). |
 
+On a disposable local demo, open **PROMO CODES** in Organizer and create a 20% discount. Book an €8 ticket with that code and check that the simulated claim shows €6.40. Confirm it and inspect the dashboard charts. Open **STAFF ACCESS** to demonstrate managing a disposable door account.
+
 Good extra moments if you have time:
 - On the door, **FIND BY NAME → Diogo** shows a claimed booking with no check-in button. Only PAID tickets get in.
 - Reopen the guest's `?booking=` link in a new tab: the booking comes back with no name or email shown.
