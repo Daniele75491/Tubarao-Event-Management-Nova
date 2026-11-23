@@ -20,6 +20,7 @@ import os
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -684,6 +685,7 @@ def page_organizer() -> None:
     event = data["event"]
     active_event_summary(event, data["pricing"])
     kpi_panel(data)
+    charts_panel(data["charts"])
     st.divider()
     payment_verification(identity, data)
     st.divider()
@@ -718,6 +720,73 @@ def kpi_panel(data: dict) -> None:
     row2[3].metric("MEN CAP", f"{cap['men']} / {cap['men_paid_cap']}", f"{k['checked_in']} paid checked in",
                    delta_color="off", delta_arrow="off")
     st.caption("Exact numbers are internal. The public page only ever shows AVAILABLE, FEW TICKETS LEFT or SOLD OUT.")
+
+
+# ---------------------------------------------------------------- charts
+
+CHART_BLUE = "#1F5CFF"  # Tubarão's Atlantic blue (checked readable on the dark background)
+
+
+def bar_chart(frame: pd.DataFrame, x: str, x_title: str, y: str, y_title: str, tooltip: list, sort=None):
+    """One bar per row, one colour, rounded tops, exact numbers on hover."""
+    return (alt.Chart(frame)
+            .mark_bar(color=CHART_BLUE, cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
+            .encode(x=alt.X(f"{x}:N", title=x_title, sort=sort, axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y(f"{y}:Q", title=y_title, axis=alt.Axis(tickMinStep=1)),
+                    tooltip=tooltip)
+            .properties(height=240))
+
+
+def charts_panel(charts: dict) -> None:
+    """CHARTS: tickets sold per day, arrivals per 15 minutes, revenue by price tier (logic.py computes them)."""
+    title, toggle = st.columns([3, 1], vertical_alignment="bottom")
+    title.markdown("<h2>Charts</h2>", unsafe_allow_html=True)
+    as_tables = toggle.toggle("Show as tables", key="charts_as_tables")
+    columns = st.columns(3)
+
+    sales = pd.DataFrame(charts["sales_by_day"])
+    with columns[0]:
+        st.markdown("**Tickets sold per day**")
+        if sales.empty:
+            st.caption("No data yet.")
+        else:
+            sales["Day"] = pd.to_datetime(sales["day"]).dt.strftime("%d %b")
+            sales["Revenue"] = sales["revenue_cents"].map(logic.money)
+            if as_tables:
+                st.dataframe(sales[["Day", "tickets", "Revenue"]].rename(columns={"tickets": "Tickets"}),
+                             hide_index=True, width="stretch")
+            else:
+                st.altair_chart(bar_chart(sales, "Day", "Day (Lisbon)", "tickets", "Tickets",
+                                          ["Day", alt.Tooltip("tickets", title="Tickets"), "Revenue"],
+                                          sort=list(sales["Day"])), width="stretch")
+
+    arrivals = pd.DataFrame(charts["arrivals"])
+    with columns[1]:
+        st.markdown("**Arrivals per 15 minutes**")
+        if arrivals.empty:
+            st.caption("No data yet.")
+        elif as_tables:
+            st.dataframe(arrivals[["slot", "arrivals"]].rename(columns={"slot": "From", "arrivals": "Arrivals"}),
+                         hide_index=True, width="stretch")
+        else:
+            st.altair_chart(bar_chart(arrivals, "slot", "Time (Lisbon)", "arrivals", "Arrivals",
+                                      [alt.Tooltip("slot", title="From"), alt.Tooltip("arrivals", title="Arrivals")],
+                                      sort=list(arrivals["slot"])), width="stretch")
+
+    tiers = pd.DataFrame(charts["revenue_by_tier"])
+    tiers["Revenue"] = tiers["revenue_cents"].map(logic.money)
+    tiers["revenue_eur"] = tiers["revenue_cents"] / 100
+    with columns[2]:
+        st.markdown("**Revenue by price tier**")
+        if tiers["tickets"].sum() == 0:
+            st.caption("No data yet.")
+        elif as_tables:
+            st.dataframe(tiers[["tier", "tickets", "Revenue"]].rename(columns={"tier": "Tier", "tickets": "Tickets"}),
+                         hide_index=True, width="stretch")
+        else:
+            st.altair_chart(bar_chart(tiers, "tier", "Price tier", "revenue_eur", "Revenue (€)",
+                                      [alt.Tooltip("tier", title="Tier"), alt.Tooltip("tickets", title="Tickets"),
+                                       "Revenue"], sort=list(tiers["tier"])), width="stretch")
 
 
 def _table(rows: list[dict], columns: dict, name: str):

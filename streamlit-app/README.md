@@ -62,7 +62,7 @@ The guest's screen updates by itself when the organizer decides, without reloadi
 | `guest_list_pdf.py` | Draws the printable guest list. |
 | `seed.py` | Resets the database with demo data and access codes. |
 | `specs/` | One short spec (Why / What / Out of scope / Done when) per feature added after the port. |
-| `tests/` | About 230 automated checks: one file per area, plus `test_app.py`, which opens the screens and presses buttons. |
+| `tests/` | About 250 automated checks: one file per area, plus `test_app.py`, which opens the screens and presses buttons. |
 | `AGENTS.md` | The rulebook for AI coding agents working in this folder. |
 
 A button press travels like this: **`app.py` → a function in `logic.py` → `db.py`**. For example, **CONFIRM PAID** calls `logic.confirm_payment()`. That function checks that you are the organizer and that the booking was claimed in time. It then saves `PAID` through `db.py` and calls `logic.issue_ticket()`, which uses `tickets.py`.
@@ -100,7 +100,7 @@ Everything in the classroom JavaScript app was ported:
 
 - **Guests:** the follow step, AVAILABLE / FEW TICKETS LEFT / SOLD OUT (never exact numbers), EARLY/LATE prices with the optional countdown and late-price preview, the checkout with the category warning, the hold countdown, the simulated claim, and resuming a booking by re-entering the same details.
 - **Organizer:**
-  - access-code sign-in, KPIs and revenue
+  - access-code sign-in, KPIs and revenue, and charts of sales, arrivals and revenue by price tier
   - confirm, reject, and confirm-after-Revolut for reserved or expired bookings (with the capacity re-check)
   - demo QR issue, retry and download, amount adjustment with private history, category correction, and deleting records or duplicate paid tickets
   - event editing (capacity, MEN cap, prices, pricing mode, sales schedule), creating and activating events, and non-paying attendees
@@ -124,6 +124,7 @@ Refunds, editable FEW TICKETS LEFT thresholds and editing the Instagram handle a
 - **Remember a booking through its link:** `specs/remember-booking.md`
 - **Hero video on the landing page:** `specs/hero-video.md`
 - **Check in non-paying guests at the door:** `specs/non-paying-check-in.md`
+- **Charts on the organizer dashboard** (tickets sold per day, arrivals per 15 minutes, revenue by price tier): `specs/dashboard-charts.md`
 - **Fixes from the PR #1 review** (expiry saved, safe setup and reset, sessions rechecked, ID-based selection, reliable QR scanning, Windows setup): `specs/review-fixes.md`
 
 ## Settings

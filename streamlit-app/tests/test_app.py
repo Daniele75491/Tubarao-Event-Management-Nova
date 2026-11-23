@@ -262,6 +262,20 @@ def test_the_door_can_check_in_a_resident_by_name(demo_db):
     assert marta["checked_in_at"]
 
 
+# ------------------------------------------------------------------ dashboard charts
+
+def test_the_organizer_sees_the_three_charts(demo_db):
+    at = sign_in(open_screen("organizer"), ORGANIZER_CODE)
+    no_errors(at)
+    assert any("Charts" in m.value for m in at.markdown)
+    assert len(at.get("vega_lite_chart")) == 3
+
+
+def test_the_door_account_sees_no_charts(demo_db):
+    at = sign_in(open_screen("organizer"), DOOR_CODE)
+    assert len(at.get("vega_lite_chart")) == 0
+
+
 def test_a_hosted_first_start_with_bad_codes_explains_why(tmp_path, monkeypatch):
     monkeypatch.setenv("TUBARAO_DB", str(tmp_path / "fresh.db"))
     monkeypatch.setenv("TUBARAO_ORGANIZER_CODE", "same-code-123")
