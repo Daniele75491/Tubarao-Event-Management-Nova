@@ -80,9 +80,12 @@ def qr_png(token: str) -> bytes:
 
 
 def decode_qr_image(image_bytes: bytes) -> str | None:
-    """Read the text inside a QR code photo (camera or uploaded file).
+    """Read the text inside a QR code photo (camera or uploaded file). None if no code is found.
 
-    Uses OpenCV's built-in QR reader. Returns None when no code is found.
+    OpenCV has two QR readers. The standard one misses about 3 in 100 perfectly clean codes,
+    so the newer "Aruco" reader goes first and the standard one is the backup. Each is tried on
+    the image as it is and on cleaned-up versions (greyscale, black-and-white, a white border
+    added, enlarged), which also helps with small, dim or tightly cropped camera photos.
     """
     import cv2  # imported here so the rest of the app works even without OpenCV
     import numpy as np
@@ -91,10 +94,22 @@ def decode_qr_image(image_bytes: bytes) -> str | None:
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     except Exception:
         return None
-    array = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-    detector = cv2.QRCodeDetector()
-    for candidate in (array, cv2.cvtColor(array, cv2.COLOR_BGR2GRAY)):
-        text, _points, _ = detector.detectAndDecode(candidate)
-        if text:
-            return text
+    colour = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+    grey = cv2.cvtColor(colour, cv2.COLOR_BGR2GRAY)
+    _, black_white = cv2.threshold(grey, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    bordered = cv2.copyMakeBorder(grey, 40, 40, 40, 40, cv2.BORDER_CONSTANT, value=255)
+    enlarged = cv2.resize(grey, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+
+    readers = []
+    if hasattr(cv2, "QRCodeDetectorAruco"):
+        readers.append(cv2.QRCodeDetectorAruco())
+    readers.append(cv2.QRCodeDetector())
+    for reader in readers:
+        for candidate in (colour, grey, black_white, bordered, enlarged):
+            try:
+                text, _points, _ = reader.detectAndDecode(candidate)
+            except cv2.error:
+                continue
+            if text:
+                return text
     return None

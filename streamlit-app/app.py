@@ -27,6 +27,7 @@ import db
 import guest_list_pdf
 import logic
 import seed
+import selection
 import tickets
 from logic import TubaraoError
 
@@ -50,23 +51,26 @@ def load_secrets() -> None:
 
 
 @st.cache_resource
-def bootstrap() -> bool:
-    """Runs once per server. On a brand-new deployment with no staff accounts,
-    create the demo data if access codes were provided as secrets."""
+def bootstrap() -> str | None:
+    """Runs once per server. On a brand-new deployment with an empty database, create the demo
+    data if both access codes were provided as secrets (all or nothing, see seed.py).
+    Returns a message when setup could not run; it is shown on the staff sign-in screen."""
     load_secrets()
     conn = db.connect()
-    empty = not db.active_accounts(conn) and not db.all_events(conn)
-    organizer, door = os.environ.get("TUBARAO_ORGANIZER_CODE"), os.environ.get("TUBARAO_DOOR_CODE")
-    if empty and organizer and door:
-        seed.seed(conn, organizer, door)
-    conn.close()
-    return True
+    try:
+        problem = seed.bootstrap_if_empty(conn, os.environ.get("TUBARAO_ORGANIZER_CODE"),
+                                          os.environ.get("TUBARAO_DOOR_CODE"))
+    finally:
+        conn.close()
+    if problem:
+        bootstrap.clear()  # don't remember a failure: try again on the next page load
+    return problem
 
 
 def conn():
     """One database connection per browser session."""
     if "conn" not in st.session_state:
-        bootstrap()
+        st.session_state.setup_problem = bootstrap()
         st.session_state.conn = db.connect()
     return st.session_state.conn
 
@@ -90,12 +94,24 @@ def show_flash() -> None:
         getattr(st, kind)(text)
 
 
+def session_ended(error: TubaraoError) -> bool:
+    """If logic.py refused because the staff session is no longer valid, sign this browser out.
+    The next page run then shows the access-code form. Returns True when that happened."""
+    if error.code != "UNAUTHORIZED":
+        return False
+    for key in ("staff_token", "scan_result", "manual_result", "last_presence"):
+        st.session_state.pop(key, None)
+    flash("warning", "Your session has ended. Enter your access code again.")
+    return True
+
+
 def act(action, *args, success: str | None = None, **kwargs):
     """Run a logic.py action, remember the outcome, and reload the page."""
     try:
         result = action(*args, **kwargs)
     except TubaraoError as error:
-        flash("error", error.message)
+        if not session_ended(error):
+            flash("error", error.message)
     else:
         if success:
             flash("success", success)
@@ -177,6 +193,8 @@ def staff_identity() -> dict | None:
     if not db.active_accounts(c):
         st.warning("No staff accounts exist yet. In a terminal, run `uv run python seed.py` to create the demo "
                    "data and access codes.")
+        if st.session_state.get("setup_problem"):
+            st.error(st.session_state.setup_problem)
     with st.form("login"):
         code = st.text_input("Access code", type="password")
         if st.form_submit_button("ENTER", type="primary", width="stretch"):
@@ -517,10 +535,13 @@ def result_banner(result: dict) -> None:
     st.markdown(f"<div class='banner {css}'><div class='display'>{title}</div>{body}</div>", unsafe_allow_html=True)
 
 
-def run_check_in(action, *args) -> dict:
+def run_check_in(action, *args) -> dict | None:
+    """Returns the door result, or None when the session ended (the caller reloads to the sign-in form)."""
     try:
         return action(conn(), *args, now())
     except TubaraoError as error:
+        if session_ended(error):
+            return None
         return {"result": "ERROR", "message": error.message}
     except Exception:  # never let a technical failure look like an admission
         return {"result": "ERROR", "message": "Try again."}
@@ -570,6 +591,8 @@ def manual_search(identity: dict) -> None:
     try:
         found = logic.search_attendees(conn(), identity, query, now())
     except TubaraoError as error:
+        if session_ended(error):
+            st.rerun()
         st.error(error.message)
         return
     if not found["attendees"]:
@@ -596,11 +619,19 @@ def manual_search(identity: dict) -> None:
 
 @st.fragment(run_every="5s")
 def live_attendance(identity: dict) -> None:
-    """Refreshes every 5 seconds. If an update fails, the last list stays on screen."""
+    """Refreshes every 5 seconds. If an update fails, the last list stays on screen,
+    except when the session has ended: then names disappear and the sign-in form shows."""
     st.markdown("<h3>LIVE ATTENDANCE</h3>", unsafe_allow_html=True)
     try:
         data = logic.presence(conn(), identity)
         st.session_state.last_presence = data
+    except TubaraoError as error:
+        if session_ended(error):
+            st.rerun(scope="app")
+        data = st.session_state.get("last_presence")
+        st.warning("LIVE UPDATE UNAVAILABLE")
+        if not data:
+            return
     except Exception:
         data = st.session_state.get("last_presence")
         st.warning("LIVE UPDATE UNAVAILABLE")
@@ -694,12 +725,12 @@ def _table(rows: list[dict], columns: dict, name: str):
     if not rows:
         st.caption("Nothing here.")
         return None
+    # Selections are remembered by booking ID, never by row position (see selection.py).
+    key = selection.prepare(st.session_state, name, [row["id"] for row in rows], st.session_state.get("table_round", 0))
     frame = pd.DataFrame([{label: make(row) for label, make in columns.items()} for row in rows])
-    picked = st.dataframe(frame, hide_index=True, width="stretch", selection_mode="single-row",
-                          on_select=lambda: st.session_state.update(last_table=name),
-                          key=f"{name}_{st.session_state.get('table_round', 0)}")
-    chosen = picked.selection.rows
-    return rows[chosen[0]] if chosen and chosen[0] < len(rows) else None
+    st.dataframe(frame, hide_index=True, width="stretch", selection_mode="single-row", key=key,
+                 on_select=lambda: selection.on_click(st.session_state, name, key))
+    return selection.chosen(st.session_state, name, rows)
 
 
 REVIEW_ORDER = {"PAYMENT_CLAIMED": 0, "RESERVED": 1, "PAID": 2, "EXPIRED": 3, "REJECTED": 4, "CANCELLED": 5}
@@ -757,6 +788,8 @@ def reservation_actions(identity: dict, r: dict) -> None:
                     buttons[1].download_button("DOWNLOAD DEMO QR", png, file_name=f"tubarao-ticket-{r['last_name']}.png",
                                                mime="image/png", key="qr_download", on_click="ignore")
                 except TubaraoError as error:
+                    if session_ended(error):
+                        st.rerun()
                     buttons[1].error(error.message)
             else:
                 buttons[0].warning(r["ticket_issue_error"] or "Ticket not issued yet.")
@@ -776,7 +809,8 @@ def confirm(action, identity, reservation_id, secret) -> None:
     try:
         result = action(conn(), identity, reservation_id, now(), secret)
     except TubaraoError as error:
-        flash("error", error.message)
+        if not session_ended(error):
+            flash("error", error.message)
         st.rerun()
     if result["status"] == "EXPIRED":
         flash("warning", "The review window had already ended, so this booking is now EXPIRED. After verifying the "
@@ -1042,7 +1076,7 @@ def downloads(identity: dict, event: dict) -> None:
     def backup_csv():
         separate = db.connect()
         try:
-            return logic.event_backup_csv(separate, identity)[1]
+            return logic.event_backup_csv(separate, identity, now())[1]
         finally:
             separate.close()
 
