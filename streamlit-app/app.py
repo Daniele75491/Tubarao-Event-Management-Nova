@@ -380,8 +380,8 @@ def checkout_screen(state: dict, category: str) -> None:
                "payment on the next page. No real payment is needed (university demo). "
                "The final price is the one locked into your reservation when you press RESERVE MY SPOT.")
     with st.form("checkout"):
-        first_name = st.text_input("First name (as on your ID)", max_chars=100)
-        last_name = st.text_input("Last name (as on your ID)", max_chars=100)
+        first_name = st.text_input("First name", max_chars=100)
+        last_name = st.text_input("Last name", max_chars=100)
         email = st.text_input("Email (you will need it to reopen your booking)", max_chars=254, placeholder="you@example.test")
         st.warning("Please select the correct ticket category. Tickets purchased under the wrong category may be "
                    "cancelled and refunded.")
@@ -420,6 +420,24 @@ BOOKING_COPY = {
 }
 
 
+NEXT_STEPS = {
+    "RESERVED": "Press the SIMULATE button below before the timer ends to claim your demo payment. "
+                "Nothing is charged.",
+    "PAYMENT_CLAIMED": "Nothing more to do now. The event admin has to confirm your claim; this page updates by itself.",
+    "PAID": "Your booking is confirmed. Ask the classroom event admin for your demo QR ticket and show it at the door.",
+    "EXPIRED": "This reservation is no longer valid and your place was released. Press TRY AGAIN to start a new "
+               "reservation if tickets are still available.",
+    "REJECTED": "The admin did not accept your claim, so no ticket was issued. Press TRY AGAIN to make a new "
+                "reservation, or ask the event admin why.",
+    "CANCELLED": "This reservation is no longer active. Press TRY AGAIN to make a new reservation.",
+}
+
+
+def next_step_guidance(status: str) -> str:
+    """What the guest can do now, for a booking in this status."""
+    return NEXT_STEPS.get(status, "We could not read the status of this booking. Reload the page or ask the event admin.")
+
+
 def booking_screen(state: dict) -> None:
     if st.button("← Back to the event"):
         st.session_state.show_booking = False
@@ -450,6 +468,8 @@ def booking_panel(minutes: int) -> None:
     st.markdown(f"<p class='center eyebrow'>{view['category']} · {logic.public_price(view['amount_cents'])}</p>",
                 unsafe_allow_html=True)
 
+    st.info(f"**What's next?** {next_step_guidance(status)}")
+
     if status == "RESERVED":
         st.markdown(f"<div class='big-timer'>{countdown_text(logic.parse_time(view['reserved_until']))}</div>",
                     unsafe_allow_html=True)
@@ -468,8 +488,8 @@ def booking_panel(minutes: int) -> None:
     if st.session_state.get("claim_error"):
         st.error(st.session_state.pop("claim_error"))
     if status in ("PAYMENT_CLAIMED", "PAID"):
-        st.caption("Can’t find your ticket later? Check your spam or junk folder too. "
-                   "If it’s still missing, contact the organizers.")
+        st.caption("This university demo sends no emails. To come back later, reopen this page's link or use "
+                   "“Already reserved? Find your booking” with the booking reference and your email.")
     if status in ("EXPIRED", "REJECTED", "CANCELLED"):
         if st.button("TRY AGAIN", type="primary", width="stretch"):
             forget_booking()
