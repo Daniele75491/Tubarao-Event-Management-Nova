@@ -296,3 +296,25 @@ def test_live_attendance_stops_after_the_session_ends(demo_db):
     no_errors(at)
     assert not any(m.label == "TOTAL INSIDE" for m in at.metric)
     assert any(field.label == "Access code" for field in at.text_input)
+
+
+def test_booking_page_says_it_is_a_demo_and_explains_each_status(demo_db):
+    at = open_screen("tickets")
+    at.checkbox[0].check().run()
+    [b for b in at.button if b.label == "GET TICKET →"][0].click().run()
+    at.text_input[0].input("Ux")
+    at.text_input[1].input("Tester")
+    at.text_input[2].input("ux@example.test")
+    at.checkbox[0].check()
+    button(at, "RESERVE MY SPOT").click().run()
+    no_errors(at)
+    assert any("UNIVERSITY DEMO" in i.value for i in at.info)
+    for status, word in (("EXPIRED", "Expired"), ("REJECTED", "Rejected"), ("PAID", "Confirmed and paid")):
+        assert word in app_copy(status)
+
+
+def app_copy(status: str) -> str:
+    import sys
+    sys.path.insert(0, str(ROOT))
+    import app
+    return app.BOOKING_COPY[status][1]
