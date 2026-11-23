@@ -38,3 +38,10 @@ The only change in `logic.py` is the wording of the user-facing `MESSAGES` dicti
 ## Limitations
 - Wording only; no layout or CSS redesign.
 - Duplicate/invalid wording on the QR path was checked by reading the banner code, not by scanning a real QR.
+
+## Update: contextual booking guidance ("What's next?")
+- **Feature:** `next_step_guidance(status)` and `NEXT_STEPS` in `streamlit-app/app.py`. `booking_panel` shows a "What's next?" box for the real status (RESERVED, PAYMENT_CLAIMED, PAID, EXPIRED, REJECTED, CANCELLED). Unknown statuses get a safe fallback. Only real actions are mentioned (SIMULATE, TRY AGAIN, ask the admin).
+- **Messages corrected:** removed "as on your ID" from the name fields (no ID matching exists); replaced the spam/junk-folder hint with a note that the demo sends no emails and how to reopen a booking.
+- **Tests:** `streamlit-app/tests/test_booking_guidance.py` (per-status text, all states covered, fallback, no misleading wording, booking-page integration RESERVED to PAYMENT_CLAIMED). Spec: `streamlit-app/specs/booking-guidance.md`.
+- **Demo:** reserve a ticket, read the box, press SIMULATE and watch the box change.
+- **Limitations:** PAID guidance cannot show the QR itself because the admin issues it; EXPIRED and REJECTED were tested through their text, not by waiting for a real expiry.
