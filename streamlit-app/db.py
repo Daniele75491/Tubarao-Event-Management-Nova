@@ -16,6 +16,7 @@ admin_access_accounts           staff access codes (stored only as salted hashes
 admin_sessions                  who is signed in (stored only as hashes)
 reservation_amount_adjustments  private history of manual price corrections
 promo_codes                     discount codes the organizer creates for an event
+login_failures                  recent wrong access codes, per source fingerprint (to limit guessing)
 """
 
 from __future__ import annotations
@@ -131,6 +132,14 @@ CREATE TABLE IF NOT EXISTS promo_codes (
 
 -- A code is unique within its event (codes are always saved in capitals).
 CREATE UNIQUE INDEX IF NOT EXISTS promo_codes_one_code_per_event ON promo_codes(event_id, code);
+
+-- Wrong access codes, to limit guessing. Only a fingerprint (hash) of the source is kept.
+CREATE TABLE IF NOT EXISTS login_failures (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_hash TEXT NOT NULL,
+    failed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS login_failures_by_source ON login_failures(source_hash, failed_at);
 
 -- Deliberately no foreign key: the history must survive deleting the reservation.
 CREATE TABLE IF NOT EXISTS reservation_amount_adjustments (

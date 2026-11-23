@@ -59,10 +59,11 @@ The guest's screen updates by itself when the organizer decides, without reloadi
 | `db.py` | **The storage.** Creates the tables in one SQLite file (`data/tubarao.db`) and reads/saves rows. It also adds new columns to an older database file automatically, so you never need to delete your data when a feature is added. |
 | `tickets.py` | **The QR code.** Makes the secret ticket token, draws the QR image and reads QR photos (with two OpenCV readers, because one alone misses a few codes). |
 | `selection.py` | Remembers which row of an organizer table is selected by its booking ID, never by row position. |
+| `display.py` | Shows names and other typed text as plain text, so a guest can't put a link, image or formatting on a staff screen. |
 | `guest_list_pdf.py` | Draws the printable guest list. |
 | `seed.py` | Resets the database with demo data and the first two access codes. After that, manage staff accounts from the dashboard's STAFF ACCESS section. |
 | `specs/` | One short spec (Why / What / Out of scope / Done when) per feature added after the port. |
-| `tests/` | About 310 automated checks: one file per area, plus `test_app.py`, which opens the screens and presses buttons. |
+| `tests/` | About 340 automated checks: one file per area, plus `test_app.py`, which opens the screens and presses buttons. |
 | `AGENTS.md` | The rulebook for AI coding agents working in this folder. |
 
 A button press travels like this: **`app.py` → a function in `logic.py` → `db.py`**. For example, **CONFIRM PAID** calls `logic.confirm_payment()`. That function checks that you are the organizer and that the booking was claimed in time. It then saves `PAID` through `db.py` and calls `logic.issue_ticket()`, which uses `tickets.py`.
@@ -128,6 +129,7 @@ Refunds, editable FEW TICKETS LEFT thresholds and editing the Instagram handle a
 - **Promo codes** (percent off at checkout, with optional use limit and expiry): `specs/promo-codes.md`
 - **Staff management** (add, deactivate and reset staff access codes from the dashboard, without `seed.py`): `specs/staff-management.md`
 - **Fixes from the PR #1 review** (expiry saved, safe setup and reset, sessions rechecked, ID-based selection, reliable QR scanning, Windows setup): `specs/review-fixes.md`
+- **Security hardening** (typed text always shown as plain text, at most 5 wrong access codes per 15 minutes, codes of at least 10 characters): `specs/security-hardening.md`
 
 ## Settings
 
@@ -138,3 +140,12 @@ Refunds, editable FEW TICKETS LEFT thresholds and editing the Instagram handle a
 | `TUBARAO_DB` | Where the database file lives (default `data/tubarao.db`). |
 
 When the app is hosted (Block 3), put these in Streamlit's secrets instead of a file. The `data/` folder is never committed to Git.
+
+## Security and known limits
+
+- Access codes are stored only as salted scrypt hashes and need at least 10 characters. `seed.py` generates 16 random characters.
+- After 5 wrong codes within 15 minutes, sign-in is refused for that visitor (by IP address, or by browser session on `localhost`) for 15 minutes, even with the right code.
+- Every staff action calls `logic.require_role`, which re-checks the session, the account and the role in the database.
+- Typed text goes through `display.esc` or `display.md` before it is shown.
+
+Known limits: codes are shared per role (no personal passwords or two-factor sign-in); anyone can hold places with made-up emails until the holds expire; and on a host where every visitor shares one address, wrong guesses from anyone pause sign-in for everyone for 15 minutes.
