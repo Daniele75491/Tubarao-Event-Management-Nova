@@ -28,7 +28,7 @@ Open the guest demo in your browser. You can try it without signing in to Stream
 3. A teammate with organizer access can confirm the claim and download the QR ticket. A QR code is the square image door staff can scan.
 4. A teammate with door access can scan the QR or find the guest by name. A second check-in for the same ticket is refused.
 
-Keep staff codes private. Use the [demo walkthrough](docs/DEMO-RUNBOOK.md) for sample guests and backup steps, or the [interactive presentation guide](docs/INTERACTIVE-PRESENTATION.md) to rehearse as a team.
+Instructor demo credentials are provided privately. Keep staff codes private. Use the [demo walkthrough](docs/DEMO-RUNBOOK.md) for sample guests and backup steps, or the [interactive presentation guide](docs/INTERACTIVE-PRESENTATION.md) to rehearse as a team.
 
 ## Run the app on your computer
 
