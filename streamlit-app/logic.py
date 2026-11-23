@@ -61,14 +61,14 @@ class TubaraoError(Exception):
 
 
 MESSAGES = {
-    "INVALID_INPUT": "Check your details and try again.",
+    "INVALID_INPUT": "Some details look incomplete. Please fill in your first name, last name and a valid email (for example name@example.com), then try again.",
     "EVENT_NOT_FOUND": "No active event is available.",
-    "EVENT_SOLD_OUT": "This event is sold out.",
-    "MEN_SOLD_OUT": "Men tickets are sold out.",
-    "SALES_CLOSED": "Ticket sales are closed.",
-    "ACTIVE_RESERVATION_EXISTS": "This email already has a reservation or paid ticket. Return to your existing checkout.",
-    "RESERVATION_NOT_FOUND": "Reservation not found. Check your details.",
-    "INVALID_RESERVATION_STATUS": "This reservation can no longer be claimed.",
+    "EVENT_SOLD_OUT": "Sorry, this event is sold out. No more tickets are available.",
+    "MEN_SOLD_OUT": "Sorry, Men tickets are sold out. Women tickets may still be available.",
+    "SALES_CLOSED": "Ticket sales are closed at the moment. Please come back later.",
+    "ACTIVE_RESERVATION_EXISTS": "This email already has a reservation or a paid ticket. Use \"Already reserved? Find your booking\" on the event page to reopen it.",
+    "RESERVATION_NOT_FOUND": "Reservation not found. Check that the booking reference and the email are exactly the ones you used.",
+    "INVALID_RESERVATION_STATUS": "This reservation can no longer be claimed, because it has expired or was already handled. Start a new reservation if tickets are left.",
     "PAYMENT_NOT_CLAIMED": "This reservation is not awaiting payment verification.",
     "UNAUTHORIZED": "Enter your access code to continue.",
     "FORBIDDEN": "This account does not have access.",
